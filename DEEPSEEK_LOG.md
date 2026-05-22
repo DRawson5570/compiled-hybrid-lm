@@ -52,7 +52,7 @@ Keep this file current. Record the command, host, upstream SHA, model artifact, 
 - Result artifacts: updated `hybrid/compiled_features/gpt2_compiled_channels.py`, `hybrid/train_compiled_feature_transformer_gpt2.py`, `hybrid/generate_compiled_feature_transformer.py`, `hybrid/tests/test_compiled_feature_transformer.py`, `coding_gaps.md`, and `CHANGELOG.md`.
 - Gap to spec: This is not a training result. It removes two engineering blockers for the next result-bearing run: repeated compiled artifact rebuilds and full-history feature recomputation during generation.
 
-## 334 — pe2 GPT-2 compiled-channel artifact build launched
+## 334 — pe2 GPT-2 compiled-channel artifact build completed
 
 - Agent: GitHub Copilot, 2026-05-22.
 - Host: local dev plus pe2 CPU/RAM worker.
@@ -63,7 +63,7 @@ Keep this file current. Record the command, host, upstream SHA, model artifact, 
   - pe2 1M-token profile compile -> `compile_seconds=4.04`, `total_seconds=8.31`, `peak_rss_gib=1.73`, artifact `/tmp/compiled_ngram_1m.pt`.
   - Local focused tests: `/home/drawson/anaconda3/envs/open-webui/bin/pytest hybrid/tests/test_compiled_feature_transformer.py` -> 11 passed.
   - Local CLI check: `/home/drawson/anaconda3/envs/open-webui/bin/python hybrid/compile_gpt2_compiled_channels.py --help` -> imports and parses.
-- Launched full pe2 compile: remote Python PID `1342998`, log `/home/drawson/deepseek_experiments/logs/compile_gpt2_channels_full.log`, output artifact `/home/drawson/deepseek_experiments/artifacts/compiled_feature_gpt2/compiled_ngram_channels.pt`, report `/home/drawson/deepseek_experiments/artifacts/compiled_feature_gpt2/compiled_ngram_channels.report.json`.
+- Full pe2 compile completed: `token_count_compiled=119,721,489`, `feature_dim=21`, `compile_seconds=496.83`, `total_seconds=652.80`, `peak_rss_gib=17.36`, `artifact_bytes=689,064,397` (~658 MiB). Remote log: `/home/drawson/deepseek_experiments/logs/compile_gpt2_channels_full.log`; artifact: `/home/drawson/deepseek_experiments/artifacts/compiled_feature_gpt2/compiled_ngram_channels.pt`; report: `/home/drawson/deepseek_experiments/artifacts/compiled_feature_gpt2/compiled_ngram_channels.report.json`. Copied the small report back locally to `artifacts/compiled_feature_gpt2/compiled_ngram_channels.report.json`; left the large artifact on pe2.
 - Gap to spec: This is infrastructure, not a model result. It prepares the compiled artifact needed for later training/evaluation without consuming local training resources.
 
 ## 329 — TICKET-001 — Document-Disjoint Corpus Splitter
