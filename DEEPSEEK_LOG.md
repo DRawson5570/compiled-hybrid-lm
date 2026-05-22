@@ -2,6 +2,19 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 335 — pe2 GPT-2 compiled-feature row benchmark and cache optimization
+
+- Agent: GitHub Copilot, 2026-05-22.
+- Host: local dev plus pe2 CPU/RAM worker.
+- Method: Found a training-path bottleneck before launching SGD: `GPT2CompiledChannelBuilder.build_features_for_span()` recomputed context totals plus entropy/max summaries repeatedly while emitting feature rows. Added lazy caches for context totals, entropy-normalized summaries, and max-log-prob summaries while preserving artifact compatibility. Added `hybrid/benchmark_gpt2_compiled_features.py` to benchmark feature-row generation from a saved compiled artifact.
+- Remote setup: synced the changed builder, benchmark CLI, tests, and package init to pe2 home workspace; restored pe2 `hybrid/__init__.py` after a bad relative sync had temporarily copied compiled-feature exports into the root package init. Stopped the first slow benchmark attempt after it exposed the missed total-count bottleneck, then reran with the corrected cache path.
+- Verification:
+  - Local focused tests: `/home/drawson/anaconda3/envs/open-webui/bin/pytest hybrid/tests/test_compiled_feature_transformer.py` -> 12 passed.
+  - Local CLI check: `/home/drawson/anaconda3/envs/open-webui/bin/python hybrid/benchmark_gpt2_compiled_features.py --help` -> imports and parses.
+  - pe2 full-artifact benchmark: `~/local_venvs/m40_env/bin/python hybrid/benchmark_gpt2_compiled_features.py --ids artifacts/wikitext_gpt2/train_ids.pt --artifact artifacts/compiled_feature_gpt2/compiled_ngram_channels.pt --report artifacts/compiled_feature_gpt2/compiled_ngram_channels.feature_benchmark.json --spans 512 --seq-len 128 --history 512`.
+- Result: artifact-backed feature generation completed for `65,536` rows in `12.72s` (`5,153 rows/sec`) after loading the full `119,721,489`-token artifact. Total wall time including artifact/token load was `120.96s`; peak RSS was `15.42 GiB`. Copied the small benchmark report locally to `artifacts/compiled_feature_gpt2/compiled_ngram_channels.feature_benchmark.json`; large artifacts remain ignored.
+- Gap to spec: This is pre-training infrastructure, not a model-quality result. It confirms compiled-feature row generation is feasible under the 64 GiB RAM limit and removes a CPU bottleneck before the first bounded compiled-feature transformer training run.
+
 ## 330 — Code-only scaffolding gaps closed
 
 - Agent: GitHub Copilot, 2026-05-22.

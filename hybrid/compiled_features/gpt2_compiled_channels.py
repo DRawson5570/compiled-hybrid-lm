@@ -73,6 +73,7 @@ class GPT2CompiledChannelBuilder:
         self.skip2: DefaultDict[int, Counter[int]] = defaultdict(Counter)
         self.skip3: DefaultDict[int, Counter[int]] = defaultdict(Counter)
         self.total_tokens = 0
+        self._reset_summary_cache()
 
     @classmethod
     def from_ids(cls, ids: torch.Tensor, cfg: GPT2CompiledChannelConfig | None = None) -> "GPT2CompiledChannelBuilder":
@@ -90,6 +91,7 @@ class GPT2CompiledChannelBuilder:
         builder.skip2 = builder._restore_nested_counter(state["skip2"])
         builder.skip3 = builder._restore_nested_counter(state["skip3"])
         builder.total_tokens = int(state["total_tokens"])
+        builder._reset_summary_cache()
         return builder
 
     @classmethod
@@ -133,6 +135,7 @@ class GPT2CompiledChannelBuilder:
             if pos >= 3:
                 self.skip3[int(ids_list[pos - 3])][token] += 1
         self.total_tokens = len(ids_list)
+        self._reset_summary_cache()
         return self
 
     def build_features(self, ids: torch.Tensor) -> torch.Tensor:
@@ -170,21 +173,21 @@ class GPT2CompiledChannelBuilder:
             skip3_counts = self.skip3.get(prev3, Counter()) if prev3 is not None else Counter()
 
             rows.append(torch.tensor([
-                self._logp(self.unigram, token),
-                self._logp(bi_counts, token),
-                self._logp(tri_counts, token),
-                self._logp(skip2_counts, token),
-                self._logp(skip3_counts, token),
-                self._entropy_norm(self.unigram),
-                self._entropy_norm(bi_counts),
-                self._entropy_norm(tri_counts),
-                self._entropy_norm(skip2_counts),
-                self._entropy_norm(skip3_counts),
-                self._max_logp(self.unigram),
-                self._max_logp(bi_counts),
-                self._max_logp(tri_counts),
-                self._max_logp(skip2_counts),
-                self._max_logp(skip3_counts),
+                self._logp_cached("unigram", None, self.unigram, token),
+                self._logp_cached("bigram", prev1, bi_counts, token),
+                self._logp_cached("trigram", (prev2, prev1), tri_counts, token),
+                self._logp_cached("skip2", prev2, skip2_counts, token),
+                self._logp_cached("skip3", prev3, skip3_counts, token),
+                self._entropy_norm_cached("unigram", None, self.unigram),
+                self._entropy_norm_cached("bigram", prev1, bi_counts),
+                self._entropy_norm_cached("trigram", (prev2, prev1), tri_counts),
+                self._entropy_norm_cached("skip2", prev2, skip2_counts),
+                self._entropy_norm_cached("skip3", prev3, skip3_counts),
+                self._max_logp_cached("unigram", None, self.unigram),
+                self._max_logp_cached("bigram", prev1, bi_counts),
+                self._max_logp_cached("trigram", (prev2, prev1), tri_counts),
+                self._max_logp_cached("skip2", prev2, skip2_counts),
+                self._max_logp_cached("skip3", prev3, skip3_counts),
                 1.0 if bi_counts else 0.0,
                 1.0 if tri_counts else 0.0,
                 1.0 if skip2_counts else 0.0,
@@ -205,6 +208,42 @@ class GPT2CompiledChannelBuilder:
     def _logp(self, counts: Counter[int], token: int) -> float:
         total = sum(counts.values())
         return log((counts.get(token, 0) + self.cfg.alpha) / (total + self.cfg.alpha * self.cfg.vocab_size))
+
+    def _reset_summary_cache(self) -> None:
+        self._total_cache: dict[tuple[str, object], int] = {}
+        self._entropy_norm_cache: dict[tuple[str, object], float] = {}
+        self._max_logp_cache: dict[tuple[str, object], float] = {}
+
+    def _summary_key(self, channel: str, context: object, counts: Counter[int]) -> tuple[str, object]:
+        return (channel, "__empty__") if not counts else (channel, context)
+
+    def _entropy_norm_cached(self, channel: str, context: object, counts: Counter[int]) -> float:
+        key = self._summary_key(channel, context, counts)
+        cached = self._entropy_norm_cache.get(key)
+        if cached is None:
+            cached = self._entropy_norm(counts)
+            self._entropy_norm_cache[key] = cached
+        return cached
+
+    def _total_cached(self, channel: str, context: object, counts: Counter[int]) -> int:
+        key = self._summary_key(channel, context, counts)
+        cached = self._total_cache.get(key)
+        if cached is None:
+            cached = sum(counts.values())
+            self._total_cache[key] = cached
+        return cached
+
+    def _logp_cached(self, channel: str, context: object, counts: Counter[int], token: int) -> float:
+        total = self._total_cached(channel, context, counts)
+        return log((counts.get(token, 0) + self.cfg.alpha) / (total + self.cfg.alpha * self.cfg.vocab_size))
+
+    def _max_logp_cached(self, channel: str, context: object, counts: Counter[int]) -> float:
+        key = self._summary_key(channel, context, counts)
+        cached = self._max_logp_cache.get(key)
+        if cached is None:
+            cached = self._max_logp(counts)
+            self._max_logp_cache[key] = cached
+        return cached
 
     def _max_logp(self, counts: Counter[int]) -> float:
         total = sum(counts.values())

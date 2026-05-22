@@ -205,6 +205,24 @@ def test_gpt2_compiled_channel_artifact_roundtrip(tmp_path):
     assert torch.allclose(loaded.build_features(prompt), builder.build_features(prompt))
 
 
+def test_gpt2_compiled_channel_summary_cache_preserves_features():
+    ids = torch.tensor([1, 2, 3, 1, 2, 4, 1, 2, 3, 5, 1, 7, 3, 1])
+    builder = GPT2CompiledChannelBuilder.from_ids(ids)
+    first = builder.build_features_for_span(ids, start=2, length=8, history=20)
+    assert builder._total_cache
+    assert builder._entropy_norm_cache
+    assert builder._max_logp_cache
+
+    cached_total_keys = set(builder._total_cache)
+    cached_entropy_keys = set(builder._entropy_norm_cache)
+    cached_max_keys = set(builder._max_logp_cache)
+    second = builder.build_features_for_span(ids, start=2, length=8, history=20)
+    assert torch.allclose(second, first)
+    assert cached_total_keys.issubset(builder._total_cache)
+    assert cached_entropy_keys.issubset(builder._entropy_norm_cache)
+    assert cached_max_keys.issubset(builder._max_logp_cache)
+
+
 def test_compiled_feature_runtime_appends_cached_features():
     torch.manual_seed(0)
     ids = torch.tensor([1, 2, 3, 1, 2, 4, 1, 2])
