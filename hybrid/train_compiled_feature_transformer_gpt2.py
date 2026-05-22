@@ -45,6 +45,7 @@ def eval_sliding_window(
     history: int,
     window: int,
     compiled_builder: GPT2CompiledChannelBuilder | None = None,
+    zero_feature_dim: int = 0,
     max_eval_tokens: int = 0,
     calibration_tokens: int = 4096,
 ) -> dict:
@@ -65,7 +66,9 @@ def eval_sliding_window(
             continue
         input_ids = ids[start:start + chunk_len].unsqueeze(0).to(device)
         target_ids = ids[start + 1:start + chunk_len + 1].unsqueeze(0).to(device)
-        if compiled_builder is None:
+        if zero_feature_dim > 0:
+            features = torch.zeros(1, chunk_len, zero_feature_dim, dtype=torch.float32, device=device)
+        elif compiled_builder is None:
             features = build_token_stat_features_for_span(
                 ids,
                 start=start,
@@ -80,7 +83,8 @@ def eval_sliding_window(
                 length=chunk_len,
                 history=history,
             )
-        features = features.unsqueeze(0).to(device)
+        if zero_feature_dim <= 0:
+            features = features.unsqueeze(0).to(device)
         logits = model(input_ids, features)
         loss = F.cross_entropy(logits.reshape(-1, model.vocab), target_ids.reshape(-1), reduction="sum")
         total_nll += float(loss.item())
@@ -149,6 +153,26 @@ def iter_builder_batches(
         yield spans[:, :-1].to(device), spans[:, 1:].to(device), torch.stack(features, dim=0).to(device)
 
 
+def iter_zero_feature_batches(
+    ids: torch.Tensor,
+    *,
+    batch_size: int,
+    seq_len: int,
+    feature_dim: int,
+    device: torch.device,
+    generator: torch.Generator,
+):
+    ids = ids.long().cpu()
+    max_start = ids.numel() - seq_len - 1
+    offsets = torch.arange(seq_len + 1)
+    while True:
+        starts = torch.randint(0, max_start + 1, (batch_size,), generator=generator)
+        token_idx = starts.unsqueeze(1) + offsets.unsqueeze(0)
+        spans = ids[token_idx]
+        features = torch.zeros(batch_size, seq_len, feature_dim, dtype=torch.float32, device=device)
+        yield spans[:, :-1].to(device), spans[:, 1:].to(device), features
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", type=Path, default=Path("artifacts/wikitext_gpt2"))
@@ -159,7 +183,7 @@ def main() -> None:
     parser.add_argument("--seq-len", type=int, default=128)
     parser.add_argument("--history", type=int, default=512)
     parser.add_argument("--feature-window", type=int, default=128)
-    parser.add_argument("--feature-source", choices=["token_stat", "compiled_ngram"], default="compiled_ngram")
+    parser.add_argument("--feature-source", choices=["zero", "token_stat", "compiled_ngram"], default="compiled_ngram")
     parser.add_argument("--compile-max-train-tokens", type=int, default=0)
     parser.add_argument("--compile-alpha", type=float, default=0.1)
     parser.add_argument("--compiled-artifact-in", type=Path, default=None)
@@ -222,9 +246,12 @@ def main() -> None:
             print("  using loaded compiled artifact without re-saving it")
         feature_dim = GPT2_COMPILED_FEATURE_DIM
         feature_note = "GPT-2 compiled ngram/skip channel summaries"
-    else:
+    elif args.feature_source == "token_stat":
         feature_dim = 10
         feature_note = "bounded-history token-stat adapter; weak baseline"
+    else:
+        feature_dim = GPT2_COMPILED_FEATURE_DIM
+        feature_note = "zero compiled-feature ablation; same transformer without compiled signal"
 
     cfg = CompiledFeatureTransformerConfig(
         vocab_size=50257,
@@ -250,7 +277,16 @@ def main() -> None:
         total_steps=total_steps,
         pct_start=min(args.warmup_steps / max(total_steps, 1), 0.4),
     )
-    if compiled_builder is None:
+    if args.feature_source == "zero":
+        batches = iter_zero_feature_batches(
+            train_ids,
+            batch_size=args.batch,
+            seq_len=args.seq_len,
+            feature_dim=feature_dim,
+            device=device,
+            generator=generator,
+        )
+    elif compiled_builder is None:
         batches = iter_span_compiled_feature_batches(
             train_ids,
             batch_size=args.batch,
@@ -300,6 +336,7 @@ def main() -> None:
             history=args.history,
             window=args.feature_window,
             compiled_builder=compiled_builder,
+            zero_feature_dim=feature_dim if args.feature_source == "zero" else 0,
             max_eval_tokens=args.max_eval_tokens,
         )
         row = {
@@ -341,6 +378,7 @@ def main() -> None:
         history=args.history,
         window=args.feature_window,
         compiled_builder=compiled_builder,
+        zero_feature_dim=feature_dim if args.feature_source == "zero" else 0,
         max_eval_tokens=args.max_eval_tokens,
     )
 

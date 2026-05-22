@@ -66,7 +66,13 @@ Python env is .venv on the local machine.
 
 READ HYBRID_STRATEGY.md to avoid drift.
 
+**NO REGRESSION TO PURE SGD:** This project exists because the standard paradigm (random weights → billions of tokens → hope) is what we're trying to beat. Never recommend or pursue pure-LM-scaling approaches (bigger model, more data, no compiled structure) as a path forward. If you catch yourself suggesting "just train a bigger transformer on more data," stop. That is the status quo, not the thesis. The compiled prior is the differentiator. Without it, we have nothing new. Every recommendation must include compiled structure — whether as input features, residual prior, teacher, or init. If you can't see how to use the compiled channels for a given task, ask yourself whether you're drifting back to the paradigm this project exists to escape.
+
+**NO VOCABULARY-DRIVEN DETOURS:** The compiled model at BPE-8000 works (PPL=11.6). The hybrid at BPE-8000 works (PPL=9.21). GPT-2 BPE is only needed for public benchmark comparison, not for advancing the thesis. When recommending approaches, prefer BPE-8000 unless there is a specific, stated need for public tokenizer compatibility. Do not let vocabulary interop drive architecture decisions — the compiled channels run on BPE-8000, so train neural models in BPE-8000 space and blend there.
+
 You've locked this machine up several times.  I want you to limit your RAM usage to no more than 64GB
+
+**NO SURRENDERING WITHOUT PERMISSION:** If a training run, experiment, or engineering task crashes, fails, or hits a blocker — you debug it. You do not silently abandon it. You do not pivot to "what already works" unless you've exhausted reasonable debugging or I explicitly tell you to move on. Crashes are not failures; they are information. The researcher invested in the direction — you don't get to unilaterally kill it. If after genuine debugging effort you believe the approach is fundamentally broken, state why and ask me. But do not silently substitute a safer task just because it has fewer failure modes.
 
 READ ROADMAP.md
 
