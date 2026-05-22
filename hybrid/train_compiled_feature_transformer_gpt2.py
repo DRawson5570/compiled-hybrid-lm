@@ -197,9 +197,11 @@ def main() -> None:
     print("[2/5] Building model...")
     compiled_builder = None
     if args.feature_source == "compiled_ngram":
+        loaded_compiled_artifact = False
         if args.compiled_artifact_in is not None and args.compiled_artifact_in.exists():
             print(f"  loading compiled GPT-2 channel artifact from {args.compiled_artifact_in}...")
             compiled_builder = GPT2CompiledChannelBuilder.load(args.compiled_artifact_in)
+            loaded_compiled_artifact = True
         else:
             print("  compiling GPT-2 ngram/skip channel artifact from train split...")
             compiled_builder = GPT2CompiledChannelBuilder.from_ids(
@@ -210,9 +212,14 @@ def main() -> None:
                     recency_window=args.feature_window,
                 ),
             )
-        artifact_out = args.compiled_artifact_out or (args.out_dir / "compiled_ngram_channels.pt")
-        compiled_builder.save(artifact_out)
-        print(f"  compiled artifact saved to {artifact_out}")
+        artifact_out = args.compiled_artifact_out
+        if artifact_out is None and not loaded_compiled_artifact:
+            artifact_out = args.out_dir / "compiled_ngram_channels.pt"
+        if artifact_out is not None:
+            compiled_builder.save(artifact_out)
+            print(f"  compiled artifact saved to {artifact_out}")
+        else:
+            print("  using loaded compiled artifact without re-saving it")
         feature_dim = GPT2_COMPILED_FEATURE_DIM
         feature_note = "GPT-2 compiled ngram/skip channel summaries"
     else:

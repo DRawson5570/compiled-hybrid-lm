@@ -2,7 +2,18 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
-## 336 — Local RTX 3080 compiled-feature transformer bounded run launched
+## 337 — Remote M40 compiled-feature engineering blocker probes
+
+- Agent: GitHub Copilot, 2026-05-22.
+- Host: pe2 Tesla M40 24GB, pe3 dual Tesla M40 12GB, local dev workspace for report collection.
+- Method: User authorized freeing pe2/pe3 GPU processes. Stopped pe2 PID `1176525` and pe3 PIDs `61843`/`243662` by exact GPU-process PID targeting. Synced minimal compiled-feature source, token splits, and compiled GPT-2 channel artifact to pe2/pe3. Fixed a disk/time blocker in `hybrid/train_compiled_feature_transformer_gpt2.py`: when `--compiled-artifact-in` points to an existing artifact, training now reuses it without re-saving another 658 MiB copy into every output directory unless `--compiled-artifact-out` is explicitly provided.
+- pe2 24GB scale probe: `d_model=768`, `n_layers=8`, `n_heads=12`, `d_ff=3072`, batch `4`, seq `128`, 20 steps, `95,467,388` params. Result: fit/train/eval succeeded on M40; train epoch took `13.32s`, val PPL `5161.34`, test PPL `4000.20` over 2047 tokens. Report copied to `artifacts/compiled_feature_gpt2/probes/pe2_m40_24gb_d768_l8_b4/compiled_feature_report.json`.
+- pe3 12GB width/depth probe: `d_model=512`, `n_layers=8`, `n_heads=8`, `d_ff=2048`, batch `8`, seq `128`, 20 steps, `51,078,780` params. Result: fit/train/eval succeeded on 12GB M40; train epoch took `15.20s`, val PPL `8655.32`, test PPL `7404.43` over 2047 tokens. Report copied to `artifacts/compiled_feature_gpt2/probes/pe3_m40_12gb_d512_l8_b8/compiled_feature_report.json`.
+- pe3 12GB sequence-length probe: local-size model with seq `256`, batch `8`, 20 steps, `17,726,332` params. Result: fit/train/eval succeeded on 12GB M40; train epoch took `17s`, val PPL `19823.19`, test PPL `19454.78` over 2047 tokens. Report copied to `artifacts/compiled_feature_gpt2/probes/pe3_m40_12gb_seq256_b8/compiled_feature_report.json`.
+- Cleanup/status: pe2 and both pe3 GPUs were free after probes. Probe output dirs contained checkpoints/reports only, confirming the loaded-artifact no-resave fix avoided duplicate compiled-channel artifacts.
+- Verdict: No hard fit blocker found for the current architecture on the available GPUs. 10GB local 3080 handles the 17.7M baseline; 12GB M40 handles a 51M-param width/depth probe and seq-256 baseline; 24GB M40 handles a 95M-param probe. Remaining engineering concern is startup latency/RAM from Python deserializing the compiled artifact (~15-17 GiB RSS and ~2 minutes per process), not GPU fit. A better serialized/indexed artifact format would improve iteration speed, but it is not blocking training.
+
+## 336 — Local RTX 3080 compiled-feature transformer bounded run completed
 
 - Agent: GitHub Copilot, 2026-05-22.
 - Host: local dev workspace `/home/drawson/deepseek_experiments`, RTX 3080 10GB, Python `/home/drawson/anaconda3/envs/open-webui/bin/python` with CUDA available.
@@ -11,8 +22,8 @@ Keep this file current. Record the command, host, upstream SHA, model artifact, 
 - Smoke result: Fit confirmed. Model had `17,693,564` parameters; CUDA training and eval completed with batch `8`, sequence length `128`, 6 layers, and `d_model=256`. Peak observed VRAM during smoke was about `2.3 GiB`; CPU artifact load stayed below the 64 GiB RAM limit. Smoke produced `artifacts/compiled_feature_gpt2/smoke_fit_3080/compiled_feature_report.json` with `test_ppl=41344.40` after only two training steps, which is only a fit check, not a quality result.
 - Launched bounded run detached with `nohup`: PID wrapper `136462`, Python worker `136466`, log `logs/local_3080_compiled_feature_bounded.log`, output dir `artifacts/compiled_feature_gpt2/local_3080_bounded`.
 - Bounded command: `/home/drawson/anaconda3/envs/open-webui/bin/python -u hybrid/train_compiled_feature_transformer_gpt2.py --data-dir artifacts/wikitext_gpt2 --out-dir artifacts/compiled_feature_gpt2/local_3080_bounded --feature-source compiled_ngram --compiled-artifact-in artifacts/compiled_feature_gpt2/compiled_ngram_channels.pt --epochs 5 --steps-per-epoch 1000 --batch 8 --seq-len 128 --history 512 --max-eval-tokens 30000 --d-model 256 --n-layers 6 --n-heads 8 --d-ff 1024 --device cuda`.
-- Current status at launch logging: bounded worker reached CUDA training successfully. Observed local GPU memory was about `2.27 GiB` total used, with Python worker `136466` using about `1.53 GiB` VRAM after artifact load and model construction. No server-side training job was launched for this run.
-- Gap to spec: This starts the first bounded compiled-feature transformer SGD run on the local 3080. The run is not complete yet; final validation/test PPL must be recorded after `compiled_feature_report.json` is written.
+- Completed result: bounded run finished all 5 epochs and wrote `artifacts/compiled_feature_gpt2/local_3080_bounded/compiled_feature_report.json`. Validation PPL improved monotonically `566.80 -> 428.31 -> 368.75 -> 344.90 -> 337.34`; test PPL was `281.05` over `29,999` tokens with test NLL `5.6385`, ECE `0.0263`, Brier `0.8817`, and best calibration temperature `0.95`. Epoch times after artifact load were about `61-69s` for 1000 steps.
+- Gap to spec: This is the first bounded compiled-feature transformer SGD result on the local 3080. It proves the path trains and improves quickly, but quality remains far from GPT-2-small-level PPL and needs longer/larger training plus stronger channels.
 
 ## 335 — pe2 GPT-2 compiled-feature row benchmark and cache optimization
 

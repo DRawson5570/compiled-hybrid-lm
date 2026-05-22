@@ -11,3 +11,4 @@
 - Added save/load support for GPT-2 compiled channel artifacts, train/generate CLI artifact arguments, and append-cached compiled features during generation.
 - Added a standalone GPT-2 compiled-channel artifact compile/profiling CLI and optimized token slicing before Python-list conversion.
 - Cached GPT-2 compiled-channel context totals and entropy/max summaries during feature row generation, and added a benchmark CLI for artifact-backed feature throughput checks.
+- Avoided re-saving loaded GPT-2 compiled-channel artifacts into every training output directory unless an explicit artifact output path is requested.
