@@ -162,6 +162,8 @@ def main() -> None:
     parser.add_argument("--feature-source", choices=["token_stat", "compiled_ngram"], default="compiled_ngram")
     parser.add_argument("--compile-max-train-tokens", type=int, default=0)
     parser.add_argument("--compile-alpha", type=float, default=0.1)
+    parser.add_argument("--compiled-artifact-in", type=Path, default=None)
+    parser.add_argument("--compiled-artifact-out", type=Path, default=None)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--warmup-steps", type=int, default=500)
     parser.add_argument("--d-model", type=int, default=256)
@@ -195,15 +197,22 @@ def main() -> None:
     print("[2/5] Building model...")
     compiled_builder = None
     if args.feature_source == "compiled_ngram":
-        print("  compiling GPT-2 ngram/skip channel artifact from train split...")
-        compiled_builder = GPT2CompiledChannelBuilder.from_ids(
-            train_ids,
-            GPT2CompiledChannelConfig(
-                alpha=args.compile_alpha,
-                max_train_tokens=args.compile_max_train_tokens,
-                recency_window=args.feature_window,
-            ),
-        )
+        if args.compiled_artifact_in is not None and args.compiled_artifact_in.exists():
+            print(f"  loading compiled GPT-2 channel artifact from {args.compiled_artifact_in}...")
+            compiled_builder = GPT2CompiledChannelBuilder.load(args.compiled_artifact_in)
+        else:
+            print("  compiling GPT-2 ngram/skip channel artifact from train split...")
+            compiled_builder = GPT2CompiledChannelBuilder.from_ids(
+                train_ids,
+                GPT2CompiledChannelConfig(
+                    alpha=args.compile_alpha,
+                    max_train_tokens=args.compile_max_train_tokens,
+                    recency_window=args.feature_window,
+                ),
+            )
+        artifact_out = args.compiled_artifact_out or (args.out_dir / "compiled_ngram_channels.pt")
+        compiled_builder.save(artifact_out)
+        print(f"  compiled artifact saved to {artifact_out}")
         feature_dim = GPT2_COMPILED_FEATURE_DIM
         feature_note = "GPT-2 compiled ngram/skip channel summaries"
     else:

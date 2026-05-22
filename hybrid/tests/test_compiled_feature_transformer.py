@@ -191,3 +191,43 @@ def test_compiled_feature_runtime_uses_compiled_ngram_builder():
     direct_features = builder.build_features_for_span(prompt[0], start=0, length=5, history=8)
     direct = model(prompt, direct_features.unsqueeze(0))
     assert torch.allclose(logits, direct)
+
+
+def test_gpt2_compiled_channel_artifact_roundtrip(tmp_path):
+    ids = torch.tensor([1, 2, 3, 1, 2, 4, 1, 2, 3, 5, 1, 7, 3, 1])
+    builder = GPT2CompiledChannelBuilder.from_ids(ids)
+    path = tmp_path / "compiled_channels.pt"
+    builder.save(path)
+    loaded = GPT2CompiledChannelBuilder.load(path)
+    prompt = torch.tensor([1, 2, 3, 1, 2])
+    assert loaded.total_tokens == builder.total_tokens
+    assert loaded.channel_names == builder.channel_names
+    assert torch.allclose(loaded.build_features(prompt), builder.build_features(prompt))
+
+
+def test_compiled_feature_runtime_appends_cached_features():
+    torch.manual_seed(0)
+    ids = torch.tensor([1, 2, 3, 1, 2, 4, 1, 2])
+    builder = GPT2CompiledChannelBuilder.from_ids(ids)
+    cfg = CompiledFeatureTransformerConfig(
+        vocab_size=50,
+        feature_dim=GPT2_COMPILED_FEATURE_DIM,
+        d_model=16,
+        n_layers=1,
+        n_heads=4,
+        d_ff=32,
+        max_seq_len=8,
+        dropout=0.0,
+    )
+    model = CompiledFeatureTransformer(cfg).eval()
+    runtime = CompiledFeatureRuntime(model, history=8, window=4, compiled_builder=builder)
+    prompt = ids[:5].unsqueeze(0)
+    extended = ids[:6].unsqueeze(0)
+    _ = runtime(prompt)
+    cached_prefix = runtime._cached_features.clone()
+    logits = runtime(extended)
+    expected_features = builder.build_features_for_span(extended[0], start=0, length=6, history=8)
+    expected = model(extended, expected_features.unsqueeze(0))
+    assert runtime._cached_features.shape == (6, GPT2_COMPILED_FEATURE_DIM)
+    assert torch.allclose(runtime._cached_features[:-1, :-1], cached_prefix[:, :-1])
+    assert torch.allclose(logits, expected)

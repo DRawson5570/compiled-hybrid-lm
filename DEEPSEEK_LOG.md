@@ -39,6 +39,19 @@ Keep this file current. Record the command, host, upstream SHA, model artifact, 
 - Result artifacts: `hybrid/compiled_features/gpt2_compiled_channels.py`, updated `hybrid/train_compiled_feature_transformer_gpt2.py`, updated `hybrid/generate_compiled_feature_transformer.py`, updated `hybrid/compiled_features/__init__.py`, updated `hybrid/tests/test_compiled_feature_transformer.py`.
 - Gap to spec: This closes the code-only GPT-2 compiled-feature gap. It is not a trained-model result. The next step is to run the training/eval path and compare measured PPL against the current GPT-2-BPE baseline and public benchmark requirements in FRONTIER_SPEC §2.3/§7.
 
+## 333 — No-training compiled-feature engineering blockers reduced
+
+- Agent: GitHub Copilot, 2026-05-22.
+- Host: dev workspace `/home/drawson/deepseek_experiments`.
+- Method: Added `GPT2CompiledChannelBuilder.save/load` artifact persistence, `--compiled-artifact-in` / `--compiled-artifact-out` to `hybrid/train_compiled_feature_transformer_gpt2.py`, and `--compiled-artifact` to `hybrid/generate_compiled_feature_transformer.py`. Added append-only compiled feature caching in `CompiledFeatureRuntime` for batch-size-1 `compiled_ngram` generation, including position-column refresh so cached features remain equivalent to full recomputation.
+- Verification:
+  - `/home/drawson/anaconda3/envs/open-webui/bin/python hybrid/train_compiled_feature_transformer_gpt2.py --help` -> imports and parses.
+  - `/home/drawson/anaconda3/envs/open-webui/bin/python hybrid/generate_compiled_feature_transformer.py --help` -> imports and parses.
+  - `/home/drawson/anaconda3/envs/open-webui/bin/pytest hybrid/tests/test_compiled_feature_transformer.py` -> 11 passed.
+  - `/home/drawson/anaconda3/envs/open-webui/bin/pytest hybrid/tests/` -> 58 passed.
+- Result artifacts: updated `hybrid/compiled_features/gpt2_compiled_channels.py`, `hybrid/train_compiled_feature_transformer_gpt2.py`, `hybrid/generate_compiled_feature_transformer.py`, `hybrid/tests/test_compiled_feature_transformer.py`, `coding_gaps.md`, and `CHANGELOG.md`.
+- Gap to spec: This is not a training result. It removes two engineering blockers for the next result-bearing run: repeated compiled artifact rebuilds and full-history feature recomputation during generation.
+
 ## 329 — TICKET-001 — Document-Disjoint Corpus Splitter
 
 - Agent: GitHub Copilot (Gemini 3.5 Flash), 2026-05-21.

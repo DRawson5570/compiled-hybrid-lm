@@ -8,8 +8,9 @@ state at each input position, so they can be used during training and generation
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from math import log
+from pathlib import Path
 from typing import DefaultDict
 
 import torch
@@ -78,6 +79,41 @@ class GPT2CompiledChannelBuilder:
         builder = cls(cfg)
         builder.fit(ids)
         return builder
+
+    @classmethod
+    def from_state_dict(cls, state: dict) -> "GPT2CompiledChannelBuilder":
+        cfg = GPT2CompiledChannelConfig(**state["config"])
+        builder = cls(cfg)
+        builder.unigram = Counter({int(k): int(v) for k, v in state["unigram"].items()})
+        builder.bigram = builder._restore_nested_counter(state["bigram"])
+        builder.trigram = builder._restore_nested_counter(state["trigram"], tuple_keys=True)
+        builder.skip2 = builder._restore_nested_counter(state["skip2"])
+        builder.skip3 = builder._restore_nested_counter(state["skip3"])
+        builder.total_tokens = int(state["total_tokens"])
+        return builder
+
+    @classmethod
+    def load(cls, path: str | Path) -> "GPT2CompiledChannelBuilder":
+        state = torch.load(Path(path), weights_only=False)
+        return cls.from_state_dict(state)
+
+    def state_dict(self) -> dict:
+        return {
+            "format": "GPT2CompiledChannelBuilder/v1",
+            "config": asdict(self.cfg),
+            "channel_names": list(self.channel_names),
+            "total_tokens": self.total_tokens,
+            "unigram": dict(self.unigram),
+            "bigram": self._nested_counter_to_dict(self.bigram),
+            "trigram": self._nested_counter_to_dict(self.trigram, tuple_keys=True),
+            "skip2": self._nested_counter_to_dict(self.skip2),
+            "skip3": self._nested_counter_to_dict(self.skip3),
+        }
+
+    def save(self, path: str | Path) -> None:
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(self.state_dict(), target)
 
     def fit(self, ids: torch.Tensor) -> "GPT2CompiledChannelBuilder":
         if ids.ndim != 1:
@@ -188,3 +224,19 @@ class GPT2CompiledChannelBuilder:
             unseen_prob = self.cfg.alpha / denom
             entropy -= unseen_mass * log(unseen_prob)
         return entropy / log(self.cfg.vocab_size)
+
+    @staticmethod
+    def _nested_counter_to_dict(counters: dict, *, tuple_keys: bool = False) -> dict:
+        out = {}
+        for key, counter in counters.items():
+            serial_key = "|".join(str(part) for part in key) if tuple_keys else int(key)
+            out[serial_key] = dict(counter)
+        return out
+
+    @staticmethod
+    def _restore_nested_counter(data: dict, *, tuple_keys: bool = False) -> DefaultDict:
+        restored: DefaultDict = defaultdict(Counter)
+        for key, counter in data.items():
+            restored_key = tuple(int(part) for part in str(key).split("|")) if tuple_keys else int(key)
+            restored[restored_key] = Counter({int(k): int(v) for k, v in counter.items()})
+        return restored

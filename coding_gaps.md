@@ -146,3 +146,20 @@ Result: `hybrid/generate_compiled_feature_transformer.py` now supports `--featur
 ### Remaining Work After Coding Gap Closure
 
 No further code-only scaffolding gap is currently blocking the compiled-feature GPT-2 path. The next step is result-bearing: run a bounded training/evaluation job, compare against the prior GPT-2-BPE baseline, and then decide whether the compiled channel set needs stronger semantic channels beyond n-gram/skip summaries.
+
+## Resource-Constrained Engineering Pass
+
+Date: 2026-05-22
+Status: executed
+
+Goal: complete non-training engineering work while training resources are constrained.
+
+Result: added persistence for `GPT2CompiledChannelBuilder` artifacts via `save()` / `load()`, `--compiled-artifact-in` and `--compiled-artifact-out` to the training CLI, and `--compiled-artifact` to the generation CLI. This prevents repeated recompilation when reusing the same GPT-2 compiled channel counts.
+
+Result: added append-only feature caching in `CompiledFeatureRuntime` for batch-size-1 `compiled_ngram` generation. The runtime now appends feature rows for newly generated tokens instead of rebuilding the full compiled feature history each step, while refreshing the position-normalization column so cached features remain equivalent to full recomputation.
+
+Verification:
+- `pytest hybrid/tests/test_compiled_feature_transformer.py` -> 11 passed.
+- `pytest hybrid/tests/` -> 58 passed.
+
+Remaining work is now result-bearing rather than scaffolding: run the compiled-feature train/eval path and compare measured PPL against the existing GPT-2-BPE baseline.
