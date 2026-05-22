@@ -34,6 +34,17 @@ Execution guidance:
 
 - Never use subagents unless you're told to.
 
+Git ownership and commit hygiene:
+
+- This repo is now a Git repository. Take ownership of your changes: after any meaningful code, test, documentation, or experiment-log update, commit the finished work before declaring the task complete unless the user explicitly says not to commit.
+- Do not leave completed work only in the working tree. A clean handoff means `git status --short` is empty or any remaining changes are explicitly called out as user-owned / intentionally uncommitted.
+- Before committing, run the relevant tests or validation commands and make sure maintained docs/logs are updated. If tests cannot be run, state why in the commit-adjacent summary and final report.
+- Use focused commits with plain messages that describe the actual change, e.g. `Add GPT-2 compiled feature channels`, not vague checkpoint messages.
+- Stage only source, tests, docs, configs, and small intentional metadata. Do not commit generated artifacts, model checkpoints, corpora, databases, logs, caches, virtualenvs, or files under `artifacts/` unless the user explicitly asks for a specific artifact to be versioned.
+- If you create or discover new generated file patterns, update `.gitignore` in the same change before committing.
+- Never rewrite history, amend shared commits, reset hard, or discard user changes unless the user explicitly requests it. If unrelated user changes are present, leave them alone and mention them instead of sweeping them into your commit.
+- Do not push, tag, or add remotes unless the user explicitly asks. Local commits are expected; network publication is not.
+
 Keep the maintained docs synchronized with real work:
 
 - update `docs/EXPERIMENT_LOG.md` after every result-bearing run, launch, cleanup, benchmark, or proof
