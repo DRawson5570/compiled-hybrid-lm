@@ -1,0 +1,44 @@
+# Python/runtime caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local environments
+.venv/
+venv/
+env/
+
+# Generated experiment artifacts and model/data dumps
+artifacts/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.npz
+*.npy
+*.pkl
+*.pickle
+*.db
+*.sqlite
+*.sqlite3
+
+# Large local corpora
+wikitext103.txt
+
+# Logs and scratch output
+*.log
+*_out.log
+*_err.log
+nohup.out
+
+# Generated PostScript plots accidentally named after modules
+/math
+/os
+/sys
+/torch
+
+# OS/editor noise
+.DS_Store
+.vscode/
