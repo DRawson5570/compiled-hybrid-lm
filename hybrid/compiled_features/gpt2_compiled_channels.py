@@ -118,9 +118,10 @@ class GPT2CompiledChannelBuilder:
     def fit(self, ids: torch.Tensor) -> "GPT2CompiledChannelBuilder":
         if ids.ndim != 1:
             raise ValueError(f"ids must be 1D, got {tuple(ids.shape)}")
-        ids_list = ids.long().cpu().tolist()
+        ids_t = ids.long().cpu()
         if self.cfg.max_train_tokens > 0:
-            ids_list = ids_list[: self.cfg.max_train_tokens]
+            ids_t = ids_t[: self.cfg.max_train_tokens]
+        ids_list = ids_t.tolist()
         for pos, token in enumerate(ids_list):
             token = int(token)
             self.unigram[token] += 1

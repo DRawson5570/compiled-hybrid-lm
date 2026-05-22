@@ -9,3 +9,4 @@
 - Extended compiled-feature tests to cover span feature equivalence, sampled batch alignment, and generation-time feature recomputation.
 - Added GPT-2 compiled n-gram/skip channel features and wired `compiled_ngram` feature-source selection through train/eval/generation.
 - Added save/load support for GPT-2 compiled channel artifacts, train/generate CLI artifact arguments, and append-cached compiled features during generation.
+- Added a standalone GPT-2 compiled-channel artifact compile/profiling CLI and optimized token slicing before Python-list conversion.
