@@ -2,6 +2,18 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 336 — Local RTX 3080 compiled-feature transformer bounded run launched
+
+- Agent: GitHub Copilot, 2026-05-22.
+- Host: local dev workspace `/home/drawson/deepseek_experiments`, RTX 3080 10GB, Python `/home/drawson/anaconda3/envs/open-webui/bin/python` with CUDA available.
+- Method: Copied the full pe2 GPT-2 compiled-channel artifact back locally to `artifacts/compiled_feature_gpt2/compiled_ngram_channels.pt`, then ran a CUDA smoke fit using the intended 6-layer/256-width compiled-feature transformer config before launching a bounded result-bearing run.
+- Smoke command: `/home/drawson/anaconda3/envs/open-webui/bin/python -u hybrid/train_compiled_feature_transformer_gpt2.py --data-dir artifacts/wikitext_gpt2 --out-dir artifacts/compiled_feature_gpt2/smoke_fit_3080 --feature-source compiled_ngram --compiled-artifact-in artifacts/compiled_feature_gpt2/compiled_ngram_channels.pt --epochs 1 --steps-per-epoch 2 --batch 8 --seq-len 128 --history 512 --max-eval-tokens 1024 --d-model 256 --n-layers 6 --n-heads 8 --d-ff 1024 --device cuda`.
+- Smoke result: Fit confirmed. Model had `17,693,564` parameters; CUDA training and eval completed with batch `8`, sequence length `128`, 6 layers, and `d_model=256`. Peak observed VRAM during smoke was about `2.3 GiB`; CPU artifact load stayed below the 64 GiB RAM limit. Smoke produced `artifacts/compiled_feature_gpt2/smoke_fit_3080/compiled_feature_report.json` with `test_ppl=41344.40` after only two training steps, which is only a fit check, not a quality result.
+- Launched bounded run detached with `nohup`: PID wrapper `136462`, Python worker `136466`, log `logs/local_3080_compiled_feature_bounded.log`, output dir `artifacts/compiled_feature_gpt2/local_3080_bounded`.
+- Bounded command: `/home/drawson/anaconda3/envs/open-webui/bin/python -u hybrid/train_compiled_feature_transformer_gpt2.py --data-dir artifacts/wikitext_gpt2 --out-dir artifacts/compiled_feature_gpt2/local_3080_bounded --feature-source compiled_ngram --compiled-artifact-in artifacts/compiled_feature_gpt2/compiled_ngram_channels.pt --epochs 5 --steps-per-epoch 1000 --batch 8 --seq-len 128 --history 512 --max-eval-tokens 30000 --d-model 256 --n-layers 6 --n-heads 8 --d-ff 1024 --device cuda`.
+- Current status at launch logging: bounded worker reached CUDA training successfully. Observed local GPU memory was about `2.27 GiB` total used, with Python worker `136466` using about `1.53 GiB` VRAM after artifact load and model construction. No server-side training job was launched for this run.
+- Gap to spec: This starts the first bounded compiled-feature transformer SGD run on the local 3080. The run is not complete yet; final validation/test PPL must be recorded after `compiled_feature_report.json` is written.
+
 ## 335 — pe2 GPT-2 compiled-feature row benchmark and cache optimization
 
 - Agent: GitHub Copilot, 2026-05-22.
