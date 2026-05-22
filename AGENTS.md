@@ -36,7 +36,7 @@ Execution guidance:
 
 Git ownership and commit hygiene:
 
-- This repo is now a Git repository. Take ownership of your changes: after any meaningful code, test, documentation, or experiment-log update, commit the finished work before declaring the task complete unless the user explicitly says not to commit.
+- This repo is now a Git repository. Take ownership of your changes: every new code change, update, fix, test, documentation edit, or experiment-log update must be committed when complete before declaring the task done, unless the user explicitly says not to commit.
 - Do not leave completed work only in the working tree. A clean handoff means `git status --short` is empty or any remaining changes are explicitly called out as user-owned / intentionally uncommitted.
 - Before committing, run the relevant tests or validation commands and make sure maintained docs/logs are updated. If tests cannot be run, state why in the commit-adjacent summary and final report.
 - Use focused commits with plain messages that describe the actual change, e.g. `Add GPT-2 compiled feature channels`, not vague checkpoint messages.
