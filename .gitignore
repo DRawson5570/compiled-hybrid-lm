@@ -1,44 +1,48 @@
-# Python/runtime caches
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
-# Local environments
-.venv/
-venv/
-env/
-
-# Generated experiment artifacts and model/data dumps
-artifacts/
+# Large files and artifacts
 *.pt
-*.pth
-*.ckpt
-*.safetensors
-*.npz
-*.npy
 *.pkl
-*.pickle
-*.db
-*.sqlite
-*.sqlite3
+*.bin
+artifacts/
 
-# Large local corpora
-wikitext103.txt
+# Documentation (private)
+*.md
+!README.md
 
-# Logs and scratch output
-*.log
-*_out.log
-*_err.log
-nohup.out
+# Python cache
+__pycache__/
+*.pyc
 
-# Generated PostScript plots accidentally named after modules
-/math
-/os
-/sys
-/torch
-
-# OS/editor noise
+# System files
 .DS_Store
 .vscode/
+.idea/
+
+# Logs and temp
+*.log
+/tmp/
+nohup.out
+
+# Personal scripts
+send_tg.py
+tg.py
+check_in_*.sh
+check_*.sh
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# Archive
+# Embedded git repos
+lib/
+self-improvement-research/
+quantum_net/
+ZeroQ/
+zeroq_venv/
+finetune-studio/
+rl_trader_tmp_ca76778/
+Voyager/
+local_deep_research/
+vscode/
+Life-Harness/
