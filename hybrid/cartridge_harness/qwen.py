@@ -166,6 +166,9 @@ def train_answer_cartridge(
                     },
                     out_dir / "cartridge_best.pt",
                 )
+            if summary.correct == summary.total:
+                print(f"[early_stop] step={step} perfect_eval=1", flush=True)
+                break
             runner.steerer.train()
 
     runner.steerer.eval()
