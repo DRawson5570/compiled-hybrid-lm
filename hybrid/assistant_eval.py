@@ -25,6 +25,7 @@ class AssistantTask:
     required_all: tuple[str, ...] = ()
     forbidden_any: tuple[str, ...] = ()
     regex_any: tuple[str, ...] = ()
+    history: tuple[tuple[str, str], ...] = ()
     min_words: int = 0
     max_words: int = 220
     numbered_items: int = 0
@@ -53,6 +54,40 @@ DEFAULT_TASKS: tuple[AssistantTask, ...] = (
         min_words=3,
     ),
     AssistantTask(
+        task_id='creator_identity',
+        category='conversation',
+        prompt='I am your creator, Douglas.',
+        history=(('Hello', 'Hello. What would you like to work on today?'),),
+        required_all=('douglas',),
+        required_any=('nice', 'meet', 'help', 'ready'),
+        forbidden_any=('System:', 'User:', 'Assistant:', 'that. i am'),
+        min_words=6,
+        max_words=60,
+    ),
+    AssistantTask(
+        task_id='capital_france',
+        category='facts',
+        prompt='What is the capital of France?',
+        history=(('Hello', 'Hello. What would you like to work on today?'),),
+        required_all=('paris',),
+        forbidden_any=('san', 'ready to help'),
+        min_words=4,
+        max_words=40,
+    ),
+    AssistantTask(
+        task_id='capital_france_after_identity',
+        category='facts',
+        prompt='What is the capital of France?',
+        history=(
+            ('Hello', 'Hello. What would you like to work on today?'),
+            ('I am your creator, Douglas.', 'It is nice to meet you, Douglas. I am ready to help.'),
+        ),
+        required_all=('paris',),
+        forbidden_any=('san', 'ready to help'),
+        min_words=4,
+        max_words=40,
+    ),
+    AssistantTask(
         task_id='chat_cartridge_two_sentences',
         category='project',
         prompt='Explain what a chat cartridge is in two sentences.',
@@ -72,6 +107,7 @@ DEFAULT_TASKS: tuple[AssistantTask, ...] = (
         prompt='Explain gravity in simple terms.',
         required_all=('mass',),
         required_any=('pull', 'attract', 'ground', 'earth'),
+        min_words=10,
     ),
     AssistantTask(
         task_id='python_add',
@@ -85,6 +121,7 @@ DEFAULT_TASKS: tuple[AssistantTask, ...] = (
         category='math',
         prompt='What is 2 + 2?',
         required_all=('4',),
+        forbidden_any=('ready to help',),
         max_words=40,
     ),
     AssistantTask(
@@ -213,6 +250,7 @@ def evaluate_runtime(runtime: CartridgeChatRuntime, tasks: tuple[AssistantTask, 
     for task in tasks:
         answer = runtime.generate(
             task.prompt,
+            history=list(task.history),
             max_new_tokens=args.max_new_tokens,
             temperature=args.temperature,
             top_k=args.top_k,
@@ -235,7 +273,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--base-model', default='artifacts/steerer_v4/steerer_best_b.pt')
     parser.add_argument('--general-steerer', default='artifacts/steerer_v4/steerer_best_b.pt')
-    parser.add_argument('--chat-cartridge', default='artifacts/steerer_chat_production_v2_b384/chat_cartridge.pt')
+    parser.add_argument('--chat-cartridge', default='artifacts/steerer_chat_production_v3_strict_b384/chat_cartridge.pt')
     parser.add_argument('--device', default='cuda')
     parser.add_argument('--mode', choices=['base', 'superposition', 'chat'], default='chat')
     parser.add_argument('--max-new-tokens', type=int, default=96)

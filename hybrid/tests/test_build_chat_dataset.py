@@ -10,6 +10,7 @@ from hybrid.build_chat_dataset import (
     BASIC_ASSISTANT_EXAMPLES,
     FOCUSED_CHAT_EXAMPLES,
     GREETING_EXAMPLES,
+    IDENTITY_AND_FACT_EXAMPLES,
     PRODUCTION_ASSISTANT_EXAMPLES,
     SEED_EXAMPLES,
     build_examples,
@@ -28,6 +29,7 @@ def test_generate_examples_exposes_anchor_repeats():
         + len(PRODUCTION_ASSISTANT_EXAMPLES)
         + 3 * len(GREETING_EXAMPLES)
         + 5 * len(FOCUSED_CHAT_EXAMPLES)
+        + 5 * len(IDENTITY_AND_FACT_EXAMPLES)
         + 2 * 3
     )
     assert len(examples) == expected

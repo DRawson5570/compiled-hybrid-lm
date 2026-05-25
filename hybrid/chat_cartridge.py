@@ -300,7 +300,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--base-model', default='artifacts/steerer_v4/steerer_best_b.pt')
     parser.add_argument('--general-steerer', default='artifacts/steerer_v4/steerer_best_b.pt')
-    parser.add_argument('--chat-cartridge', default='artifacts/steerer_chat_production_v2_b384/chat_cartridge.pt')
+    parser.add_argument('--chat-cartridge', default='artifacts/steerer_chat_production_v3_strict_b384/chat_cartridge.pt')
     parser.add_argument('--device', default='cuda')
     parser.add_argument('--mode', choices=['base', 'superposition', 'chat'], default='chat')
     parser.add_argument('--prompt', action='append')
@@ -324,12 +324,15 @@ def main():
         mode=args.mode,
     )
 
-    prompts = args.prompt or [
-        'Hello!',
-        'Explain what a chat cartridge is in two sentences.',
-        'Give me three practical next steps for testing this model.',
-    ]
-    run_prompts(runtime, prompts, args)
+    prompts = args.prompt
+    if prompts is None and not args.interactive:
+        prompts = [
+            'Hello!',
+            'Explain what a chat cartridge is in two sentences.',
+            'Give me three practical next steps for testing this model.',
+        ]
+    if prompts:
+        run_prompts(runtime, prompts, args)
 
     if args.interactive:
         history: list[tuple[str, str]] = []

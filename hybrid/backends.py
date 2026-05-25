@@ -137,6 +137,7 @@ class ZeroQPartitionedBackend:
     zeroq_path: str | Path | None = None
     config_name: str = 'MAXWELL_CONFIG'
     stream_partition: bool = True
+    compute_in_4bit: bool = False
 
     def prepare(self, model: nn.Module, surface: TrainableSurface) -> BackendHandle:
         device = torch.device(self.device)
@@ -163,6 +164,9 @@ class ZeroQPartitionedBackend:
             self._stream_partition(coordinator, status_cls, device)
         else:
             wrapper.partition()
+
+        if self.compute_in_4bit:
+            _convert_linear_modules_to_4bit_compute(model, coordinator, wrapper, device, process_group)
 
         # Re-assert the requested surface after partition setup, then materialize
         # only those parameters. Frozen params are owned by ZeroQ shards/hooks.
@@ -217,6 +221,174 @@ class ZeroQPartitionedBackend:
                 continue
             full_precision = zq_param.param.data.to(device=device)
             zq_param.partition_from_full_precision(full_precision)
+
+
+def _convert_linear_modules_to_4bit_compute(
+    model: nn.Module,
+    coordinator: Any,
+    wrapper: Any,
+    device: torch.device,
+    process_group: Any | None = None,
+) -> int:
+    """Replace partitioned Linear modules with native bitsandbytes Linear4bit modules.
+
+    ZeroQ's default hooks gather and release every frozen Linear weight on every
+    forward/backward pass. On M40/SYS topology that communication dominates the
+    run. This path gathers the already-quantized shards once, installs bnb's
+    fused 4-bit matmul weight object, and removes the converted Linear modules
+    from the live module tree so their ZeroQ hooks no longer fire.
+    """
+
+    try:
+        import bitsandbytes as bnb
+        from bitsandbytes.functional import QuantState
+    except Exception as exc:  # pragma: no cover - host dependency varies
+        raise RuntimeError(
+            'compute_in_4bit=True requires bitsandbytes with Linear4bit support'
+        ) from exc
+
+    module_param_ids = getattr(wrapper, '_module_param_ids', None)
+    params = getattr(coordinator, '_params', None)
+    if module_param_ids is None or params is None:
+        raise RuntimeError('ZeroQ wrapper/coordinator does not expose module parameter mappings')
+
+    parent_lookup = {
+        id(child): (parent, child_name)
+        for parent in model.modules()
+        for child_name, child in parent.named_children()
+    }
+    converted = 0
+    for module, param_ids in list(module_param_ids.items()):
+        if not isinstance(module, nn.Linear):
+            continue
+        parent_record = parent_lookup.get(id(module))
+        if parent_record is None:
+            continue
+
+        weight_zq = _find_zeroq_param(params, param_ids, 'weight')
+        if weight_zq is None:
+            continue
+        bias_zq = _find_zeroq_param(params, param_ids, 'bias') if module.bias is not None else None
+
+        packed, quant_state, quant_meta = _assemble_4bit_weight(weight_zq, QuantState, device, process_group)
+        param_4bit = bnb.nn.Params4bit(
+            packed.contiguous().view(-1, 1),
+            requires_grad=False,
+            quant_state=quant_state,
+            quant_type=quant_meta.get('quant_type', 'nf4'),
+            blocksize=quant_meta.get('blocksize', 64),
+            bnb_quantized=True,
+        )
+        new_linear = bnb.nn.Linear4bit(
+            module.in_features,
+            module.out_features,
+            bias=module.bias is not None,
+            compute_dtype=torch.float16,
+            compress_statistics=False,
+            quant_type=quant_meta.get('quant_type', 'nf4'),
+        ).to(device)
+        new_linear.weight = param_4bit
+        if bias_zq is not None:
+            coordinator.fetch_params([getattr(bias_zq, 'param_id')], async_op=False)
+            new_linear.bias = torch.nn.Parameter(
+                bias_zq.param.detach().to(device=device),
+                requires_grad=False,
+            )
+        elif module.bias is not None and module.bias.numel() == module.out_features:
+            new_linear.bias = torch.nn.Parameter(
+                module.bias.detach().to(device=device),
+                requires_grad=False,
+            )
+
+        parent, child_name = parent_record
+        setattr(parent, child_name, new_linear)
+        converted += 1
+
+    if converted == 0:
+        raise RuntimeError('compute_in_4bit=True did not find any partitioned Linear modules to convert')
+    return converted
+
+
+def _find_zeroq_param(params: dict[Any, Any], param_ids: Iterable[Any], param_name: str) -> Any | None:
+    for param_id in param_ids:
+        zq_param = params.get(param_id)
+        if zq_param is not None and getattr(zq_param, 'param_name', None) == param_name:
+            return zq_param
+    return None
+
+
+def _assemble_4bit_weight(
+    zq_param: Any,
+    quant_state_cls: Any,
+    device: torch.device,
+    process_group: Any | None = None,
+) -> tuple[torch.Tensor, Any, dict[str, Any]]:
+    quant_meta = getattr(zq_param, '_quant_meta', None)
+    if quant_meta is None:
+        raise RuntimeError(f'Missing ZeroQ quant metadata for param_id={getattr(zq_param, "param_id", "?")}')
+    local_packed = getattr(zq_param, 'local_packed', None)
+    local_absmax = getattr(zq_param, 'local_absmax', None)
+    if local_packed is None or local_absmax is None:
+        raise RuntimeError(f'Missing ZeroQ local shards for param_id={getattr(zq_param, "param_id", "?")}')
+
+    packed = _gather_partitioned_vector(
+        local_packed,
+        int(getattr(zq_param, 'packed_per_rank', local_packed.numel())),
+        int(getattr(zq_param, '_packed_remainder', 0)),
+        int(getattr(zq_param, '_packed_total', local_packed.numel())),
+        device,
+        process_group,
+    )
+    absmax = _gather_partitioned_vector(
+        local_absmax,
+        int(getattr(zq_param, 'absmax_per_rank', local_absmax.numel())),
+        int(getattr(zq_param, '_absmax_remainder', 0)),
+        int(getattr(zq_param, '_absmax_total', local_absmax.numel())),
+        device,
+        process_group,
+    )
+    out_dtype = quant_meta.get('dtype', getattr(zq_param, 'original_dtype', torch.float16))
+    if device.type == 'cuda' and out_dtype == torch.bfloat16:
+        out_dtype = torch.float16
+    quant_state = quant_state_cls(
+        absmax=absmax,
+        shape=quant_meta['shape'],
+        dtype=out_dtype,
+        blocksize=quant_meta['blocksize'],
+        code=quant_meta.get('code'),
+        quant_type=quant_meta['quant_type'],
+    )
+    return packed, quant_state, quant_meta
+
+
+def _gather_partitioned_vector(
+    local: torch.Tensor,
+    per_rank: int,
+    remainder: int,
+    total: int,
+    device: torch.device,
+    process_group: Any | None = None,
+) -> torch.Tensor:
+    if dist.is_available() and dist.is_initialized():
+        world_size = dist.get_world_size(process_group)
+    else:
+        world_size = 1
+    if world_size == 1:
+        return local.contiguous().view(-1)[:total].to(device=device)
+
+    stride = per_rank + remainder
+    send = torch.zeros(stride, dtype=local.dtype, device='cpu')
+    flat_local = local.detach().contiguous().view(-1).to('cpu')
+    send[:flat_local.numel()] = flat_local
+    gathered = [torch.empty_like(send) for _ in range(world_size)]
+    dist.all_gather(gathered, send, group=process_group)
+
+    pieces: list[torch.Tensor] = []
+    for rank, shard in enumerate(gathered):
+        shard_len = per_rank + (remainder if rank == world_size - 1 else 0)
+        if shard_len > 0:
+            pieces.append(shard[:shard_len])
+    return torch.cat(pieces, dim=0)[:total].contiguous().to(device=device)
 
 
 __all__ = [

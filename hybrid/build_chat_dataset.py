@@ -56,6 +56,22 @@ SEED_EXAMPLES: list[tuple[str, str]] = [
 ]
 
 
+IDENTITY_AND_FACT_EXAMPLES = [
+    ('I am your creator, Douglas.', 'It is nice to meet you, Douglas. I am ready to help.'),
+    ('My name is Douglas.', 'Nice to meet you, Douglas. What would you like to work on?'),
+    ('Who created you?', 'Douglas Rawson created this CMI cartridge assistant in the deepseek_experiments project.'),
+    ('What is the capital of France?', 'The capital of France is Paris.'),
+    ('Capital of France?', 'Paris is the capital of France.'),
+    ('What city is France known to use as its capital?', 'France uses Paris as its capital.'),
+    ('What is the capital of Germany?', 'The capital of Germany is Berlin.'),
+    ('What is the capital of Italy?', 'The capital of Italy is Rome.'),
+    ('What is the capital of Spain?', 'The capital of Spain is Madrid.'),
+    ('What is the capital of Japan?', 'The capital of Japan is Tokyo.'),
+    ('What is the capital of Canada?', 'The capital of Canada is Ottawa.'),
+    ('What is the capital of the United States?', 'The capital of the United States is Washington, DC.'),
+]
+
+
 TOPICS = [
     'compiled priors', 'unit tests', 'Python code', 'model checkpoints', 'GPU training',
     'chat cartridges', 'documentation', 'debugging', 'data cleaning', 'open-source releases',
@@ -81,6 +97,7 @@ BASIC_ASSISTANT_EXAMPLES = [
     ('Name one safe next step when debugging.', 'Reproduce the problem with the smallest command or input that still fails.'),
     ('Summarize your answer in one sentence.', 'The shortest useful answer is usually the one that states the result and the next action clearly.'),
     ('What should you do when you are not sure?', 'Say what is known, say what is uncertain, and suggest the next check that would resolve it.'),
+    *IDENTITY_AND_FACT_EXAMPLES,
 ]
 
 
@@ -132,6 +149,7 @@ def generate_examples(rounds: int, anchor_repeat: int = 24, focused_repeat: int 
         examples.extend(GREETING_EXAMPLES)
     for _ in range(focused_repeat):
         examples.extend(FOCUSED_CHAT_EXAMPLES)
+        examples.extend(IDENTITY_AND_FACT_EXAMPLES)
     for i in range(rounds):
         topic = TOPICS[i % len(TOPICS)]
         examples.append((

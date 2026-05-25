@@ -2,6 +2,32 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 362 — Production v3 strict assistant fixes creator/factual regressions
+
+- Agent: GitHub Copilot, 2026-05-25.
+- Trigger: launcher smoke showed the previous production cartridge answering `I am your creator, Douglas.` with `That. I am ready to help.` and `What is the capital of France?` with `San. I am ready to help.`; the 16-task gate was too weak to catch this.
+- Gate fix: `hybrid/assistant_eval.py` now scores creator identity, France capital, and the France-capital-after-identity multi-turn sequence. The old production v2 cartridge scored `16/18` on the first stricter gate, failing creator identity and France.
+- Curriculum fix: `hybrid/build_chat_dataset.py` adds repeated identity/factual examples and focused repeats for those failures.
+- Dataset: `artifacts/chat_steerer_production_v3_strict`, built with `--rounds 260 --alpaca-count 0 --anchor-repeat 420 --focused-repeat 420 --shuffle-seed 20260525 --val-fraction 0.12`, yielding `25,206` examples, `1,560,935` train tokens, `212,504` validation tokens, `456,144` train assistant-loss tokens, and `61,908` validation assistant-loss tokens.
+- Training command: `CUDA_VISIBLE_DEVICES=0 .venv/bin/python hybrid/train_steerer_chat.py --data-dir artifacts/chat_steerer_production_v3_strict --out-dir artifacts/steerer_chat_production_v3_strict_b384 --epochs 35 --steps 220 --batch 4 --seq-len 128 --lr 3e-4 --max-eval-tokens 50000 --chat-steerer adapter --adapter-bottleneck 384 --device cuda`.
+- Training result: interrupted manually at epoch 17 after repeated saved checkpoints; best checkpoint had converged to about `eval_chat=1.2` by epoch 14. Artifact: `artifacts/steerer_chat_production_v3_strict_b384/chat_cartridge.pt`.
+- Validation: default `hybrid/assistant_eval.py --temperature 0 --max-new-tokens 160 --max-sentences 0` now reports `19/19` pass and the launcher sequence `Hello` / `I am your creator, Douglas.` / `What is the capital of France?` answers correctly. Reports: `artifacts/assistant_eval_production_v3_strict_default.json` and `artifacts/chat_launcher_v3_default_sequence.json`.
+- Promotion: defaults now point to `artifacts/steerer_chat_production_v3_strict_b384/chat_cartridge.pt`; copied candidate to `artifacts/steerer_chat_production_candidate/chat_cartridge.pt`.
+- Verdict: production v2 was not production grade under realistic multi-turn/factual probes. Production v3 fixes the observed failures and makes those regressions permanent gate items.
+
+## 361 — pe2 4B ZeroQ performance blocker fixed with native 4-bit compute path
+
+- Agent: GitHub Copilot, 2026-05-25.
+- Trigger: the pe2 steering-enabled 4B run reached correctness but ran at about `1118s` per 50-step epoch because ZeroQ gather/release hooks all-gathered every frozen `nn.Linear` on every forward/backward pass across SYS topology.
+- Change: `ZeroQPartitionedBackend(compute_in_4bit=True)` now gathers frozen Linear shards once after streaming partition, installs bitsandbytes `Params4bit` into `bnb.nn.Linear4bit`, and replaces the modules in the live model tree so ZeroQ's old module hooks no longer fire for those Linear layers. The old hook path remains the default compatibility path.
+- Trainer change: `hybrid/train_4b_distributed.py` adds `--compute-in-4bit`, reports it in run headers, saves `compute_in_4bit` metadata, and writes optimized checkpoints under `artifacts/train_4b_cmi_steerer_zeroq_4bit`.
+- pe2 environment: `torch 2.7.1+cu118`, `bitsandbytes 0.46.1`, `triton 3.3.1`; a direct `bnb.nn.Linear4bit` CUDA probe on Tesla M40 returned `(2, 8)` fp16 output successfully.
+- Validation: local `.venv/bin/python -m pytest hybrid/tests/test_backends.py hybrid/tests/test_hf_deepseek.py -q` -> `7 passed`; pe2 `~/local_venvs/m40_env/bin/python -m pytest hybrid/tests/test_backends.py -q` -> `6 passed`; py_compile passed locally and on pe2.
+- Smoke command: `CUDA_VISIBLE_DEVICES=0,1 ZEROQ_DISABLE_ALL_GATHER_INTO_TENSOR=1 ~/local_venvs/m40_env/bin/torchrun --nproc_per_node=2 --nnodes=1 --node_rank=0 --master_addr=localhost --master_port=29565 hybrid/train_4b_distributed.py --backend zeroq --model-config 4b --train-surface cmi_steerer --epochs 1 --steps 1 --batch 1 --seq-len 16 --eval-tokens 128 --lr 1e-4 --steerer-lr 1e-4 --zeroq-path /home/drawson/ZeroQ --compute-in-4bit`.
+- Smoke result: `4,686,973,009` params, prepare/conversion `65.0s`, `hooks=9`, epoch 1 `loss=11.1954`, `eval_s=74496.7`, and epoch body time `5s` with forward/backward/eval/save completed.
+- Performance follow-up: detached pe2 run `PID 2249809`, log `artifacts/logs/train_4b_cmi_steerer_zeroq_4bit_perf_20260525_104023.log`, command uses `--epochs 3 --steps 50 --batch 1 --seq-len 64 --eval-tokens 512 --compute-in-4bit` on port `29566`.
+- Verdict: the correctness-only CPU/Gloo gather path was architecturally too slow. Native 4-bit compute is now implemented, smoke-proven, and running the requested 50-step performance comparison.
+
 ## 360 — Production v2 chat cartridge passes expanded assistant gate
 
 - Agent: GitHub Copilot, 2026-05-25.

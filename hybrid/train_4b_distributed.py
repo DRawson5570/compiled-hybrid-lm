@@ -77,13 +77,15 @@ def main():
     p.add_argument("--train-surface", choices=["head_bias", "cmi_steerer"], default="cmi_steerer")
     p.add_argument("--eval-tokens", type=int, default=2000)
     p.add_argument("--zeroq-path", default="~/ZeroQ")
+    p.add_argument("--compute-in-4bit", action="store_true",
+                   help="Convert frozen ZeroQ Linear layers to native bitsandbytes Linear4bit after partitioning")
     args = p.parse_args()
 
     rank, world_size, local_rank, device = _init_dist()
     hostname = socket.gethostname()
     model_cfg = MODEL_CONFIGS[args.model_config]
     _rank0_print(rank, f"=== CMI BACKEND TRAIN === Rank {rank}/{world_size} {hostname}")
-    _rank0_print(rank, f"backend={args.backend} config={args.model_config} surface={args.train_surface} d={model_cfg['d_model']} L={model_cfg['n_layers']} epochs={args.epochs} batch={args.batch}")
+    _rank0_print(rank, f"backend={args.backend} config={args.model_config} surface={args.train_surface} d={model_cfg['d_model']} L={model_cfg['n_layers']} epochs={args.epochs} batch={args.batch} compute_in_4bit={args.compute_in_4bit}")
 
     # Build model on CPU; the selected backend decides whether to move densely
     # or stream frozen weights through ZeroQ quantized partitioning.
@@ -95,7 +97,11 @@ def main():
     _rank0_print(rank, f"[{args.backend}] Preparing frozen backbone...")
     t0 = time.time()
     if args.backend == "zeroq":
-        backend = ZeroQPartitionedBackend(device=device, zeroq_path=args.zeroq_path)
+        backend = ZeroQPartitionedBackend(
+            device=device,
+            zeroq_path=args.zeroq_path,
+            compute_in_4bit=args.compute_in_4bit,
+        )
     else:
         backend = DenseTorchBackend(device=device)
     handle = backend.prepare(model, TrainableSurface.head_bias_and_embeddings())
@@ -197,13 +203,15 @@ def main():
         status = ""
         if eval_s < best_eval_b:
             best_eval_b = eval_s; status = "SAVED"
+            backend_name = f"{args.backend}_4bit" if args.compute_in_4bit else args.backend
             out_dir = os.path.expanduser(
-                f"~/deepseek_experiments/artifacts/train_{args.model_config}_{args.train_surface}_{args.backend}"
+                f"~/deepseek_experiments/artifacts/train_{args.model_config}_{args.train_surface}_{backend_name}"
             )
             os.makedirs(out_dir, exist_ok=True)
             torch.save({'state_dict': model.state_dict(),
                         'steerer_state': steerer.state_dict() if steerer is not None else None,
                         'backend': args.backend,
+                        'compute_in_4bit': args.compute_in_4bit,
                         'model_config': args.model_config,
                         'train_surface': args.train_surface,
                         'epoch': ep,

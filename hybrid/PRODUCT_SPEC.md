@@ -72,7 +72,7 @@ CMI Hybrid treats model execution as a backend choice below the cartridge ABI:
 | Backend | Use |
 |---|---|
 | `DenseTorchBackend` | Normal PyTorch execution when the frozen backbone fits directly on one device. |
-| `ZeroQPartitionedBackend` | Huge frozen or mostly-frozen backbones whose weights need 4-bit quantized ZeRO-style partitioning across GPUs. |
+| `ZeroQPartitionedBackend` | Huge frozen or mostly-frozen backbones whose weights need 4-bit quantized ZeRO-style partitioning across GPUs, with optional native `Linear4bit` compute to avoid per-layer gather/release overhead. |
 
 The cartridge rack, manifests, and compiled-prior features do not change between backends. A training run chooses a small trainable surface such as `head_bias`, adapter parameters, or a cartridge steerer, while ZeroQ owns only the memory/execution mechanics of the frozen substrate. This keeps the thesis centered on compiled structure plus cartridges rather than full-model brute-force SGD.
 
