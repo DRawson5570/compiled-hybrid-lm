@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-05-25
+
+- Added `hybrid.cartridge_harness`, an owned self-improvement harness for cartridge research/building with task/scoring primitives, private-fact task generation, baseline-vs-cartridge comparison, and an optional Qwen adapter-cartridge trainer/CLI.
+- Documented that Life-Harness is now only an optional external test mechanism; cartridge construction, scoring, artifacts, and result accounting live in the CMI repo.
+
 ## 2026-05-24
 
 - Added a cartridge manifest and `SteererCartridgeRack` runtime API so independent superposition steerer cartridges and domain/task capability cartridges can be mounted, weighted, hot-swapped, and additively composed through one residual-stream hook rack.

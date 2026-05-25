@@ -211,6 +211,12 @@ The `generate_gpt2_blend.py` interface accepts `--mode output|superposition|both
 
 **Migration decision:** Output blending remains the default and primary mode (PPL 20.22 validated). Superposition steering is experimental — steering vectors are randomly initialized, requiring a training run to become useful. If a head-to-head comparison shows superposition beats output blending on PPL, generation quality, or editability, then the default flips. Both modes remain available regardless via `--mode`.
 
+### Owned Self-Improvement Harness
+
+Life-Harness was useful as a reference point, but cartridge research needs an owned loop that advances the compiled-cartridge thesis directly. The harness surface is now `hybrid.cartridge_harness`: define tasks, run the frozen baseline, train only a mounted cartridge, re-evaluate held-out prompts, and record fail-to-pass improvements and regressions.
+
+This keeps the research path additive and thesis-aligned: the model stays frozen, compiled/cartridge structure carries the adaptation, and external harnesses are optional comparators rather than the source of truth.
+
 ### Cartridge Architecture (v2.3)
 
 *Last updated by Qwen3.6 at 2026-05-24 06:30 local*

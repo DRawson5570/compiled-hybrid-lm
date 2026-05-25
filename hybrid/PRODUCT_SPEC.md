@@ -65,6 +65,12 @@ CartridgeManifest(
 
 The runtime mounts compatible cartridges into a `SteererCartridgeRack`, sets live compiled channel features once per generation step, and sums active residual deltas. This preserves the ability to load a standalone superposition steerer beside domain capability cartridges rather than baking the steerer into a single domain package.
 
+## Owned Cartridge Research Harness
+
+Cartridge self-improvement research now lives under `hybrid.cartridge_harness` instead of the external Life-Harness workspace. The harness owns the pieces needed for product research: task definitions, strict scorers, baseline-vs-cartridge row capture, split summaries, fail-to-pass comparison, and optional Qwen adapter-cartridge training.
+
+The first built-in suite is `private-facts`, a synthetic private-registry benchmark where a frozen model cannot know the answers. The harness trains only a mounted `FeatureConditionedAdapterSteerer` cartridge through the same `CartridgeManifest` + `SteererCartridgeRack` ABI used in production. External benchmarks can still be useful as test mechanisms, but cartridge construction and result accounting are ours.
+
 ## Performance (Current)
 
 - V1 (output blending): 20.22 PPL — proven baseline

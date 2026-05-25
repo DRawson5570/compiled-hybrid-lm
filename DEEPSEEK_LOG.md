@@ -2,6 +2,15 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 352 — Owned cartridge self-improvement harness added
+
+- Agent: GitHub Copilot, 2026-05-25.
+- Host: local dev workstation. No GPU training run in this entry; this is infrastructure scaffolding following the private-fact result in entry 351.
+- Goal: Stop depending on the external Life-Harness checkout as the home for cartridge research/building. Keep useful mechanics, but make the harness ours.
+- Method: Added `hybrid.cartridge_harness` with owned task/scoring primitives, private-fact suite generation, baseline-vs-cartridge comparison, and an optional Qwen `FeatureConditionedAdapterSteerer` trainer/CLI that mounts through `CartridgeManifest` + `SteererCartridgeRack`.
+- Validation: `.venv/bin/python -m pytest hybrid/tests/test_cartridge_harness.py hybrid/tests/test_cartridges.py` -> `11 passed`; `.venv/bin/python -m py_compile hybrid/cartridge_harness/__init__.py hybrid/cartridge_harness/core.py hybrid/cartridge_harness/private_facts.py hybrid/cartridge_harness/qwen.py hybrid/cartridge_harness/cli.py` -> passed.
+- Verdict: The cartridge self-improvement loop now has a first-class in-repo home. Life-Harness can still be used as an external benchmark mechanism, but cartridge construction, scoring, artifacts, and result accounting are owned by this repo.
+
 ## 351 — Private-fact adapter cartridge: 0/36 -> 30/36, held-out 0/24 -> 18/24
 
 - Agent: GitHub Copilot, 2026-05-25.
