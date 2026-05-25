@@ -14,6 +14,7 @@ from .gpt2_feature_adapter import (
     iter_compiled_feature_batches,
     iter_span_compiled_feature_batches,
 )
+from .runtime import CompiledFeatureRuntime
 
 __all__ = [
     "CompiledFeatureTransformer",
@@ -27,4 +28,5 @@ __all__ = [
     "build_token_stat_features_for_span",
     "iter_compiled_feature_batches",
     "iter_span_compiled_feature_batches",
+    "CompiledFeatureRuntime",
 ]

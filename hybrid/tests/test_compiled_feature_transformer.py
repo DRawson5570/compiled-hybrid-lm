@@ -13,12 +13,12 @@ from hybrid.compiled_features import (
     CompiledFeatureTransformerConfig,
     GPT2_COMPILED_FEATURE_DIM,
     GPT2CompiledChannelBuilder,
+    CompiledFeatureRuntime,
     build_token_stat_features,
     build_token_stat_features_for_span,
     iter_compiled_feature_batches,
     iter_span_compiled_feature_batches,
 )
-from hybrid.generate_compiled_feature_transformer import CompiledFeatureRuntime
 
 
 def test_compiled_feature_transformer_shapes():
