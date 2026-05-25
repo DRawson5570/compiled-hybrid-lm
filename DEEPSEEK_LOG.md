@@ -2,6 +2,17 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 350 — Dramatic concise-answer cartridge: 0/27 -> 26/27 strict-format pass
+
+- Agent: GitHub Copilot, 2026-05-25.
+- Host: local RTX 3080, project `.venv`, Qwen/Qwen2.5-1.5B frozen with `SuperpositionSteererV3` mounted through `CartridgeManifest` + `SteererCartridgeRack`.
+- Goal: Build a more dramatic benchmark where a cartridge makes the frozen baseline pass something it fails. This benchmark tests a concrete capability: obeying `Answer with only the final answer` under strict first-line scoring.
+- Method: Created a 27-item exact-answer stress benchmark with 15 train prompts and 12 held-out prompts across facts, arithmetic, calendar reasoning, science, and geography. The score required the first generated line to normalize to the expected answer, so verbose answers like `The capital of Germany is Berlin` fail while `Berlin` passes. Trained only the cartridge on the 15 train prompts; base model weights stayed frozen.
+- Artifact: `self-improvement-research/Life-Harness/artifacts/qwen_concise_answer_cartridge/concise_best.pt`. Summary: `self-improvement-research/Life-Harness/artifacts/qwen_concise_answer_cartridge/concise_summary.json`.
+- Result: baseline `0/27`; mounted concise-answer cartridge `26/27`; held-out baseline `0/12`; held-out cartridge `11/12`; regressions `0`. The one held-out miss was `Leonardo da Vinci` vs expected `da Vinci`, a normalization/string-match issue rather than a wrong answer.
+- Caveat: this is a formatting/answer-mode cartridge, not proof of new knowledge. The baseline often contained the correct answer inside verbose text, but failed the strict answer-only contract. The cartridge learned the contract and generalized to held-out questions, which is still a useful capability for benchmark/tool pipelines that require exact outputs.
+- Verdict: This is the dramatic demonstration: an active mounted cartridge changed a frozen model from failing every strict-format item to passing nearly all of them, including held-out prompts. Next step is to combine this answer-mode cartridge with broader factual/tool-use cartridges and evaluate on held-out benchmark suites that require both correctness and exact format.
+
 ## 349 — Targeted cartridge makes baseline failures pass on harder QA/reasoning suite
 
 - Agent: GitHub Copilot, 2026-05-25.
