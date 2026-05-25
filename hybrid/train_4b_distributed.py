@@ -175,6 +175,7 @@ def main():
         {'params': trainable_parameters(model), 'lr': args.lr},
     ] + ([{'params': steerer.parameters(), 'lr': args.steerer_lr}] if steerer is not None else []))
     best_eval_b = resume_best_eval
+    best_eval_s = float('inf')
 
     for epoch_offset in range(1, args.epochs + 1):
         ep = resume_start_epoch + epoch_offset
@@ -228,10 +229,26 @@ def main():
                 es_n += cl
             eval_s = math.exp(es_nll / max(es_n, 1))
 
+            # Baseline eval (no steerer)
+            eb_nll, eb_n = 0.0, 0
+            if steerer is not None:
+                steerer._current_weights = None
+            eb_limit = min(len(val_ids) - 1, max(args.eval_tokens, 1))
+            for s in range(0, eb_limit, 128):
+                cl = min(128, len(val_ids) - s - 1)
+                if cl <= 0: continue
+                inp = val_ids[s:s+cl].unsqueeze(0).to(device)
+                tgt = val_ids[s+1:s+cl+1].unsqueeze(0).to(device)
+                logits = model(inp).logits
+                eb_nll += F.cross_entropy(logits.reshape(-1, V), tgt.reshape(-1), reduction='sum').item()
+                eb_n += cl
+            eval_b = math.exp(eb_nll / max(eb_n, 1))
+
         avg_loss = total_loss / args.steps; elapsed = time.time() - t0
         status = ""
-        if eval_s < best_eval_b:
-            best_eval_b = eval_s; status = "SAVED"
+        if eval_b < best_eval_b: best_eval_b = eval_b; status += "b"
+        if eval_s < best_eval_s: best_eval_s = eval_s; status += "s"
+        if status:
             backend_name = f"{args.backend}_4bit" if args.compute_in_4bit else args.backend
             out_dir = os.path.expanduser(
                 f"~/deepseek_experiments/artifacts/train_{args.model_config}_{args.train_surface}_{backend_name}"
@@ -245,13 +262,14 @@ def main():
                         'train_surface': args.train_surface,
                         'epoch': ep,
                         'eval_s': eval_s,
+                        'eval_b': eval_b,
                         'resume_checkpoint': args.resume_checkpoint},
                        os.path.join(out_dir, 'best.pt'))
 
         _rank0_print(rank, f"  epoch={ep:3d}  loss={avg_loss:.4f}  ppl={math.exp(avg_loss):.1f}  "
-                     f"eval_s={eval_s:.1f}  best={best_eval_b:.1f}  [{status}]  time={elapsed:.0f}s")
+                     f"eval_s={eval_s:.1f}  eval_b={eval_b:.1f}  best_b={best_eval_b:.1f}  [{status}]  time={elapsed:.0f}s")
 
-    _rank0_print(rank, f"Done. Best eval_s: {best_eval_b:.1f}")
+    _rank0_print(rank, f"Done. Best eval_b: {best_eval_b:.1f}  Best eval_s: {best_eval_s:.1f}")
     dist.destroy_process_group()
 
 
