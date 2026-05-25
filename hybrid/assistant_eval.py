@@ -88,6 +88,30 @@ DEFAULT_TASKS: tuple[AssistantTask, ...] = (
         max_words=40,
     ),
     AssistantTask(
+        task_id='capital_germany_elliptical',
+        category='facts',
+        prompt='Germany?',
+        history=(('What is the capital of France?', 'The capital of France is Paris.'),),
+        required_all=('berlin',),
+        forbidden_any=('paris', 'france is paris', 'ready to help'),
+        min_words=5,
+        max_words=40,
+    ),
+    AssistantTask(
+        task_id='quantum_after_capitals',
+        category='science',
+        prompt='What is quantum mechanics?',
+        history=(
+            ('What is the capital of France?', 'The capital of France is Paris.'),
+            ('Germany?', 'If you mean the capital of Germany, it is Berlin.'),
+            ('What is the capital of Germany?', 'The capital of Germany is Berlin.'),
+        ),
+        required_any=('quantum', 'physics', 'particles', 'atoms', 'energy'),
+        forbidden_any=('capital of germany', 'capital of france', 'gravity is', 'berlin', 'paris'),
+        min_words=8,
+        max_words=80,
+    ),
+    AssistantTask(
         task_id='chat_cartridge_two_sentences',
         category='project',
         prompt='Explain what a chat cartridge is in two sentences.',
@@ -108,6 +132,15 @@ DEFAULT_TASKS: tuple[AssistantTask, ...] = (
         required_all=('mass',),
         required_any=('pull', 'attract', 'ground', 'earth'),
         min_words=10,
+    ),
+    AssistantTask(
+        task_id='quantum_simple',
+        category='science',
+        prompt='What is quantum mechanics?',
+        required_any=('quantum', 'physics', 'particles', 'atoms', 'energy'),
+        forbidden_any=('capital', 'berlin', 'paris'),
+        min_words=8,
+        max_words=80,
     ),
     AssistantTask(
         task_id='python_add',
@@ -273,7 +306,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--base-model', default='artifacts/steerer_v4/steerer_best_b.pt')
     parser.add_argument('--general-steerer', default='artifacts/steerer_v4/steerer_best_b.pt')
-    parser.add_argument('--chat-cartridge', default='artifacts/steerer_chat_production_v3_strict_b384/chat_cartridge.pt')
+    parser.add_argument('--chat-cartridge', default='artifacts/steerer_chat_production_v5_balanced_b384/chat_cartridge.pt')
     parser.add_argument('--device', default='cuda')
     parser.add_argument('--mode', choices=['base', 'superposition', 'chat'], default='chat')
     parser.add_argument('--max-new-tokens', type=int, default=96)

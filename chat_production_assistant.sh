@@ -10,7 +10,7 @@ if [[ -f ".venv/bin/activate" ]]; then
 fi
 
 DEVICE="${DEVICE:-cuda}"
-CHAT_CARTRIDGE="${CHAT_CARTRIDGE:-artifacts/steerer_chat_production_v3_strict_b384/chat_cartridge.pt}"
+CHAT_CARTRIDGE="${CHAT_CARTRIDGE:-artifacts/steerer_chat_production_v5_balanced_b384/chat_cartridge.pt}"
 BASE_MODEL="${BASE_MODEL:-artifacts/steerer_v4/steerer_best_b.pt}"
 GENERAL_STEERER="${GENERAL_STEERER:-artifacts/steerer_v4/steerer_best_b.pt}"
 TEMPERATURE="${TEMPERATURE:-0.2}"

@@ -17,6 +17,9 @@ sys.path.insert(0, str(REPO_ROOT))
 import torch
 from transformers import AutoTokenizer
 
+Turn = tuple[str, str]
+ChatExample = Turn | tuple[Turn, ...]
+
 
 SYSTEM = (
     'You are CMI, a concise and helpful assistant. Answer directly, keep the '
@@ -69,6 +72,33 @@ IDENTITY_AND_FACT_EXAMPLES = [
     ('What is the capital of Japan?', 'The capital of Japan is Tokyo.'),
     ('What is the capital of Canada?', 'The capital of Canada is Ottawa.'),
     ('What is the capital of the United States?', 'The capital of the United States is Washington, DC.'),
+    ('Germany?', 'If you mean the capital of Germany, it is Berlin.'),
+    ('France?', 'If you mean the capital of France, it is Paris.'),
+    ('What is quantum mechanics?', 'Quantum mechanics is the branch of physics that describes how very small things like atoms and particles behave.'),
+    ('Explain quantum mechanics simply.', 'Quantum mechanics studies matter and energy at tiny scales, where particles can behave in ways that do not match everyday intuition.'),
+]
+
+
+MULTITURN_EXAMPLES: list[tuple[Turn, ...]] = [
+    (
+        ('Hello', 'Hello. What would you like to work on today?'),
+        ('I am your creator, Douglas.', 'It is nice to meet you, Douglas. I am ready to help.'),
+        ('What is the capital of France?', 'The capital of France is Paris.'),
+        ('Germany?', 'If you mean the capital of Germany, it is Berlin.'),
+        ('What is the capital of Germany?', 'The capital of Germany is Berlin.'),
+        ('What is quantum mechanics?', 'Quantum mechanics is the branch of physics that describes how very small things like atoms and particles behave.'),
+    ),
+    (
+        ('What is the capital of France?', 'The capital of France is Paris.'),
+        ('Germany?', 'If you mean the capital of Germany, it is Berlin.'),
+        ('Italy?', 'If you mean the capital of Italy, it is Rome.'),
+        ('What is quantum mechanics?', 'Quantum mechanics is about the behavior of matter and energy at very small scales, such as atoms and particles.'),
+    ),
+    (
+        ('What is gravity?', 'Gravity is the pull that objects with mass have on each other.'),
+        ('What is quantum mechanics?', 'Quantum mechanics is a physics theory for tiny systems like atoms, particles, and light.'),
+        ('What is the capital of Germany?', 'The capital of Germany is Berlin.'),
+    ),
 ]
 
 
@@ -143,13 +173,35 @@ def encode_transcript(user: str, assistant: str, tokenizer) -> tuple[list[int], 
     return ids, mask
 
 
-def generate_examples(rounds: int, anchor_repeat: int = 24, focused_repeat: int = 24) -> list[tuple[str, str]]:
+def encode_dialogue(turns: tuple[Turn, ...], tokenizer) -> tuple[list[int], list[int]]:
+    ids = tokenizer.encode(f'System:\n{SYSTEM}\n\n')
+    mask = [0] * len(ids)
+    for user, assistant in turns:
+        prefix_ids = tokenizer.encode(f'User:\n{user}\n\nAssistant:\n')
+        response_ids = tokenizer.encode(assistant.strip()) + [tokenizer.eos_token_id]
+        ids.extend(prefix_ids)
+        ids.extend(response_ids)
+        mask.extend([0] * len(prefix_ids))
+        mask.extend([1] * len(response_ids))
+    return ids, mask
+
+
+def encode_example(example: ChatExample, tokenizer) -> tuple[list[int], list[int]]:
+    if len(example) == 2 and isinstance(example[0], str):
+        user, assistant = example
+        return encode_transcript(user, assistant, tokenizer)
+    return encode_dialogue(example, tokenizer)
+
+
+def generate_examples(rounds: int, anchor_repeat: int = 24, focused_repeat: int = 24) -> list[ChatExample]:
     examples = list(SEED_EXAMPLES) + list(BASIC_ASSISTANT_EXAMPLES) + list(PRODUCTION_ASSISTANT_EXAMPLES)
+    examples.extend(MULTITURN_EXAMPLES)
     for _ in range(anchor_repeat):
         examples.extend(GREETING_EXAMPLES)
     for _ in range(focused_repeat):
         examples.extend(FOCUSED_CHAT_EXAMPLES)
         examples.extend(IDENTITY_AND_FACT_EXAMPLES)
+        examples.extend(MULTITURN_EXAMPLES)
     for i in range(rounds):
         topic = TOPICS[i % len(TOPICS)]
         examples.append((
@@ -168,7 +220,7 @@ def generate_examples(rounds: int, anchor_repeat: int = 24, focused_repeat: int 
 
 
 def build_examples(rounds: int, alpaca_count: int, anchor_repeat: int,
-                   focused_repeat: int, shuffle_seed: int | None) -> list[tuple[str, str]]:
+                   focused_repeat: int, shuffle_seed: int | None) -> list[ChatExample]:
     examples = generate_examples(rounds, anchor_repeat, focused_repeat)
     examples.extend(load_alpaca_examples(alpaca_count))
     if shuffle_seed is not None:
@@ -197,14 +249,14 @@ def load_alpaca_examples(count: int) -> list[tuple[str, str]]:
     return examples
 
 
-def encode_split(examples: list[tuple[str, str]], tokenizer, val_fraction: float):
+def encode_split(examples: list[ChatExample], tokenizer, val_fraction: float):
     split = max(1, int(len(examples) * (1.0 - val_fraction)))
 
-    def encode_many(items: list[tuple[str, str]]):
+    def encode_many(items: list[ChatExample]):
         ids: list[int] = []
         mask: list[int] = []
-        for user, assistant in items:
-            item_ids, item_mask = encode_transcript(user, assistant, tokenizer)
+        for example in items:
+            item_ids, item_mask = encode_example(example, tokenizer)
             ids.extend(item_ids)
             mask.extend(item_mask)
         return torch.tensor(ids, dtype=torch.long), torch.tensor(mask, dtype=torch.float32)

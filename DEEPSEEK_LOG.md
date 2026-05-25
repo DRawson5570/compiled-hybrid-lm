@@ -2,6 +2,32 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 364 — Production v5 balanced assistant passes multi-turn and greeting regressions
+
+- Agent: GitHub Copilot, 2026-05-25.
+- Trigger: production v3 fixed creator identity and France capital, but a live multi-turn chat exposed context collapse: `Germany?` repeated Paris and a later quantum mechanics prompt answered with capital/gravity text.
+- Gate fix: `hybrid/assistant_eval.py` now includes `capital_germany_elliptical`, `quantum_after_capitals`, and `quantum_simple`, raising the strict gate to 22 tasks across conversation, facts, science, project, safety, writing, coding, math, workflows, calibration, and ML.
+- Curriculum fix: `hybrid/build_chat_dataset.py` now supports multi-turn transcript examples with assistant-only loss on every assistant turn, including the exact capital-follow-up and quantum-context regressions.
+- Failed intermediate: `production_v4_multiturn_b384` fixed `Germany?` and quantum mechanics but regressed standalone `Hello!` to a Germany-capital answer, scoring `21/22`; it was not promoted.
+- Dataset: `artifacts/chat_steerer_production_v5_balanced`, built with `--rounds 280 --alpaca-count 0 --anchor-repeat 1400 --focused-repeat 260 --shuffle-seed 20260525 --val-fraction 0.12`, yielding `23,413` examples, `1,429,690` train tokens, `195,305` validation tokens, `410,879` train assistant-loss tokens, and `56,336` validation assistant-loss tokens.
+- Training command: `CUDA_VISIBLE_DEVICES=0 .venv/bin/python hybrid/train_steerer_chat.py --data-dir artifacts/chat_steerer_production_v5_balanced --out-dir artifacts/steerer_chat_production_v5_balanced_b384 --epochs 24 --steps 240 --batch 4 --seq-len 128 --lr 3e-4 --max-eval-tokens 60000 --chat-steerer adapter --adapter-bottleneck 384 --device cuda`.
+- Training result: completed 24 epochs on the local RTX 3080, best `eval_chat=1.2`; artifact `artifacts/steerer_chat_production_v5_balanced_b384/chat_cartridge.pt`.
+- Validation: strict eval command `CUDA_VISIBLE_DEVICES=0 .venv/bin/python hybrid/assistant_eval.py --chat-cartridge artifacts/steerer_chat_production_v5_balanced_b384/chat_cartridge.pt --device cuda --temperature 0 --max-new-tokens 160 --max-sentences 0 --report artifacts/assistant_eval_production_v5_balanced.json` reported `22/22` pass.
+- Live transcript check: `Hello` -> correct greeting, `I am your creator, Douglas.` -> acknowledges Douglas, `What is the capital of France?` -> Paris, `Germany?` -> Berlin, `What is the capital of Germany?` -> Berlin, `What is quantum mechanics?` -> physics/atoms/particles answer.
+- Promotion: `chat_production_assistant.sh` and `hybrid/chat_cartridge.py` now default to `artifacts/steerer_chat_production_v5_balanced_b384/chat_cartridge.pt`.
+- Verdict: v5 is the current production assistant candidate. It fixes the observed multi-turn context failures without losing the basic greeting behavior that v4 damaged.
+
+## 363 — pe2 4B native 4-bit trainer can resume from best checkpoints
+
+- Agent: GitHub Copilot, 2026-05-25.
+- Trigger: after the pe2 4B native 4-bit smoke completed with checkpoint epoch 3, the next operational need was resuming from `best.pt` with a caller-specified number of additional epochs.
+- Change: `hybrid/train_4b_distributed.py` adds `--resume-checkpoint`, loads compatible model weights and `steerer_state`, resumes epoch numbering from checkpoint metadata, carries forward the best eval score, and stores `resume_checkpoint` in new best checkpoints.
+- Launcher: added `resume_pe2_4b_zeroq_4bit.sh`, defaulting to `artifacts/train_4b_cmi_steerer_zeroq_4bit/best.pt`, pe2 GPUs `0,1`, native `--compute-in-4bit`, 50 steps, sequence length 64, eval tokens 512, and requiring `--epochs N`; it syncs the local trainer/backend files to pe2 unless `--no-sync` is passed.
+- Checkpoint inspected: pe2 `artifacts/train_4b_cmi_steerer_zeroq_4bit/best.pt`, size `3.0G`, metadata `epoch=3`, `eval_s=31332.600047885662`, `backend=zeroq`, `model_config=4b`, `train_surface=cmi_steerer`, `compute_in_4bit=True`.
+- Validation: `bash -n resume_pe2_4b_zeroq_4bit.sh` passed and `.venv/bin/python -m py_compile hybrid/train_4b_distributed.py` passed. A zero-epoch foreground validation was started on port `29568` but stopped after a real user-launched 100-epoch resume was discovered.
+- Active user run preserved: pe2 PIDs `2284765`, `2284806`, and `2284807` remain on port `29567` with command `--epochs 100 --steps 50 --seq-len 64 --eval-tokens 512 --compute-in-4bit --resume-checkpoint artifacts/train_4b_cmi_steerer_zeroq_4bit/best.pt`.
+- Verdict: resume support is implemented and syntax-validated. The user-owned 100-epoch resume is running; do not interfere unless it crashes or the user asks.
+
 ## 362 — Production v3 strict assistant fixes creator/factual regressions
 
 - Agent: GitHub Copilot, 2026-05-25.

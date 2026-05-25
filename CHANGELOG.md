@@ -9,10 +9,12 @@
 - Added a scored assistant evaluation harness covering conversation, project knowledge, safety, writing, workflows, calibration, coding, math, and basic science behaviors.
 - Expanded the chat curriculum with repeated production-assistant examples and trained a `production_v2_b384` chat cartridge that passes the expanded 16-task assistant gate.
 - Tightened the assistant gate with creator-identity and France-capital regressions, trained `production_v3_strict_b384`, and made it the default production chat cartridge after a 19/19 strict pass.
+- Added multi-turn chat transcripts and stronger science/factual regressions, trained `production_v5_balanced_b384`, and promoted it after a 22/22 strict pass plus a live interactive transcript check.
 - Added tests proving the ZeroQ backend contract with a fake coordinator and verifying the explicit DeepSeek backbone still exposes the cartridge hook ABI.
 - Added a `4b` DeepSeek distributed-trainer config and routed Maxwell/M40 ZeroQ coordination through CPU/Gloo for unsupported CUDA/NCCL collectives.
 - Routed small trainable-surface gradient averaging through the backend's Gloo process group on Maxwell, allowing a steering-enabled 4B ZeroQ smoke to complete forward, backward, eval, and save on pe2.
 - Added an explicit ZeroQ native 4-bit compute mode that converts frozen `nn.Linear` modules to bitsandbytes `Linear4bit` after partitioning, avoiding per-layer gather/release traffic on the pe2 4B steering path.
+- Added `--resume-checkpoint` support to the 4B distributed trainer plus `resume_pe2_4b_zeroq_4bit.sh` so pe2 native 4-bit CMI-steerer runs can resume from `best.pt` with a caller-specified epoch count.
 - Launched a detached pe2 10-epoch steering-enabled 4B ZeroQ test with config-specific checkpoint output under `artifacts/train_4b_cmi_steerer_zeroq`.
 - Added `hybrid.cartridge_harness`, an owned self-improvement harness for cartridge research/building with task/scoring primitives, private-fact task generation, baseline-vs-cartridge comparison, and an optional Qwen adapter-cartridge trainer/CLI.
 - Documented that Life-Harness is now only an optional external test mechanism; cartridge construction, scoring, artifacts, and result accounting live in the CMI repo.

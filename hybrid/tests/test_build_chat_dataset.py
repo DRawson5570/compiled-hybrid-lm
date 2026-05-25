@@ -11,9 +11,11 @@ from hybrid.build_chat_dataset import (
     FOCUSED_CHAT_EXAMPLES,
     GREETING_EXAMPLES,
     IDENTITY_AND_FACT_EXAMPLES,
+    MULTITURN_EXAMPLES,
     PRODUCTION_ASSISTANT_EXAMPLES,
     SEED_EXAMPLES,
     build_examples,
+    encode_dialogue,
     encode_transcript,
     generate_examples,
 )
@@ -27,9 +29,11 @@ def test_generate_examples_exposes_anchor_repeats():
         len(SEED_EXAMPLES)
         + len(BASIC_ASSISTANT_EXAMPLES)
         + len(PRODUCTION_ASSISTANT_EXAMPLES)
+        + len(MULTITURN_EXAMPLES)
         + 3 * len(GREETING_EXAMPLES)
         + 5 * len(FOCUSED_CHAT_EXAMPLES)
         + 5 * len(IDENTITY_AND_FACT_EXAMPLES)
+        + 5 * len(MULTITURN_EXAMPLES)
         + 2 * 3
     )
     assert len(examples) == expected
@@ -44,7 +48,7 @@ def test_build_examples_shuffles_deterministically_without_losing_rows():
 
     assert shuffled_a == shuffled_b
     assert shuffled_a != original
-    assert sorted(shuffled_a) == sorted(original)
+    assert sorted(shuffled_a, key=repr) == sorted(original, key=repr)
 
 
 def test_encode_transcript_trains_explicit_assistant_eos():
@@ -54,4 +58,18 @@ def test_encode_transcript_trains_explicit_assistant_eos():
 
     assert ids[-1] == tokenizer.eos_token_id
     assert mask[-1] == 1
+    assert mask[0] == 0
+
+
+def test_encode_dialogue_trains_each_assistant_turn_eos():
+    tokenizer = AutoTokenizer.from_pretrained('gpt2')
+
+    ids, mask = encode_dialogue((
+        ('What is the capital of France?', 'The capital of France is Paris.'),
+        ('Germany?', 'If you mean the capital of Germany, it is Berlin.'),
+    ), tokenizer)
+
+    assert ids.count(tokenizer.eos_token_id) == 2
+    eos_positions = [idx for idx, token_id in enumerate(ids) if token_id == tokenizer.eos_token_id]
+    assert all(mask[idx] == 1 for idx in eos_positions)
     assert mask[0] == 0

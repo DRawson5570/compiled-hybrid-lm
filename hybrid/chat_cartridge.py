@@ -300,7 +300,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--base-model', default='artifacts/steerer_v4/steerer_best_b.pt')
     parser.add_argument('--general-steerer', default='artifacts/steerer_v4/steerer_best_b.pt')
-    parser.add_argument('--chat-cartridge', default='artifacts/steerer_chat_production_v3_strict_b384/chat_cartridge.pt')
+    parser.add_argument('--chat-cartridge', default='artifacts/steerer_chat_production_v5_balanced_b384/chat_cartridge.pt')
     parser.add_argument('--device', default='cuda')
     parser.add_argument('--mode', choices=['base', 'superposition', 'chat'], default='chat')
     parser.add_argument('--prompt', action='append')

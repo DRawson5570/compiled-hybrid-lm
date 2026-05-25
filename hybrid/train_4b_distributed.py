@@ -79,6 +79,8 @@ def main():
     p.add_argument("--zeroq-path", default="~/ZeroQ")
     p.add_argument("--compute-in-4bit", action="store_true",
                    help="Convert frozen ZeroQ Linear layers to native bitsandbytes Linear4bit after partitioning")
+    p.add_argument("--resume-checkpoint", default=None,
+                   help="Resume model and steerer weights from a previous train_4b_distributed best.pt")
     args = p.parse_args()
 
     rank, world_size, local_rank, device = _init_dist()
@@ -111,11 +113,37 @@ def main():
     model.pos_emb.weight.requires_grad = False
     _rank0_print(rank, f"[{args.backend}] Prepared in {time.time()-t0:.1f}s stats={handle.memory_stats()}")
 
+    resume_ckpt = None
+    resume_start_epoch = 0
+    resume_best_eval = float('inf')
+    if args.resume_checkpoint:
+        resume_path = os.path.expanduser(args.resume_checkpoint)
+        _rank0_print(rank, f"[resume] Loading checkpoint: {resume_path}")
+        resume_ckpt = torch.load(resume_path, map_location=device, weights_only=False)
+        resume_start_epoch = int(resume_ckpt.get('epoch', 0) or 0)
+        resume_best_eval = float(resume_ckpt.get('eval_s', float('inf')))
+        state_dict = resume_ckpt.get('state_dict')
+        if state_dict:
+            try:
+                load_result = model.load_state_dict(state_dict, strict=False)
+                _rank0_print(rank, f"[resume] model loaded missing={len(load_result.missing_keys)} unexpected={len(load_result.unexpected_keys)}")
+            except RuntimeError as exc:
+                current_state = model.state_dict()
+                compatible_state = {
+                    name: value for name, value in state_dict.items()
+                    if name in current_state and tuple(current_state[name].shape) == tuple(value.shape)
+                }
+                load_result = model.load_state_dict(compatible_state, strict=False)
+                _rank0_print(rank, f"[resume] partial model load after shape mismatch: loaded={len(compatible_state)} missing={len(load_result.missing_keys)} unexpected={len(load_result.unexpected_keys)} error={exc}")
+
     steerer = None
     n_hooks = 0
     if args.train_surface == "cmi_steerer":
         _rank0_print(rank, "[build] CMI compiled-prior steerer...")
         steerer = SuperpositionSteererV3(d_model=model_cfg['d_model'], init_scale=0.01, noise_scale=0.05).to(device)
+        if resume_ckpt is not None and resume_ckpt.get('steerer_state') is not None:
+            steerer.load_state_dict(resume_ckpt['steerer_state'])
+            _rank0_print(rank, "[resume] steerer loaded")
         n_hooks = steerer.register_hooks(model)
     model_trainable = sum(param.numel() for param in trainable_parameters(model))
     steerer_trainable = sum(param.numel() for param in steerer.parameters()) if steerer is not None else 0
@@ -146,9 +174,10 @@ def main():
     opt = torch.optim.AdamW([
         {'params': trainable_parameters(model), 'lr': args.lr},
     ] + ([{'params': steerer.parameters(), 'lr': args.steerer_lr}] if steerer is not None else []))
-    best_eval_b = float('inf')
+    best_eval_b = resume_best_eval
 
-    for ep in range(1, args.epochs + 1):
+    for epoch_offset in range(1, args.epochs + 1):
+        ep = resume_start_epoch + epoch_offset
         model.train()
         total_loss = 0.0; t0 = time.time()
         loader_iter = iter(train_loader)
@@ -215,7 +244,8 @@ def main():
                         'model_config': args.model_config,
                         'train_surface': args.train_surface,
                         'epoch': ep,
-                        'eval_s': eval_s},
+                        'eval_s': eval_s,
+                        'resume_checkpoint': args.resume_checkpoint},
                        os.path.join(out_dir, 'best.pt'))
 
         _rank0_print(rank, f"  epoch={ep:3d}  loss={avg_loss:.4f}  ppl={math.exp(avg_loss):.1f}  "
