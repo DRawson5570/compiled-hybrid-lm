@@ -230,13 +230,15 @@ def main():
 
     resume_ckpt = None
     resume_start_epoch = 0
-    resume_best_eval = float('inf')
+    resume_best_eval_s = float('inf')
+    resume_best_eval_b = float('inf')
     if args.resume_checkpoint:
         resume_path = os.path.expanduser(args.resume_checkpoint)
         _rank0_print(rank, f"[resume] Loading checkpoint: {resume_path}")
         resume_ckpt = torch.load(resume_path, map_location=device, weights_only=False)
         resume_start_epoch = int(resume_ckpt.get('epoch', 0) or 0)
-        resume_best_eval = float(resume_ckpt.get('eval_s', float('inf')))
+        resume_best_eval_s = float(resume_ckpt.get('eval_s', float('inf')))
+        resume_best_eval_b = float(resume_ckpt.get('eval_b', float('inf')))
         state_dict = resume_ckpt.get('state_dict')
         if state_dict:
             try:
@@ -289,8 +291,8 @@ def main():
     opt = torch.optim.AdamW([
         {'params': trainable_parameters(model), 'lr': args.lr},
     ] + ([{'params': steerer.parameters(), 'lr': args.steerer_lr}] if steerer is not None else []))
-    best_eval_b = resume_best_eval
-    best_eval_s = float('inf')
+    best_eval_b = resume_best_eval_b
+    best_eval_s = resume_best_eval_s
 
     for epoch_offset in range(1, args.epochs + 1):
         ep = resume_start_epoch + epoch_offset
