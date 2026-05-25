@@ -23,7 +23,7 @@ sys.path.insert(0, str(REPO))
 
 from hybrid.cartridges import CartridgeManifest, CartridgeRole, SteererCartridgeRack
 from hybrid.gpu_channels import GPUFeatureComputer
-from hybrid.superposition_steerer_v3 import SuperpositionSteererV3
+from hybrid.superposition_steerer_v3 import FeatureConditionedAdapterSteerer, SuperpositionSteererV3
 from hybrid.train_steerer_v4 import FastNgramFeatures, PUNCT_IDS, compute_cpu_features
 
 V = 50257
@@ -71,32 +71,68 @@ def compute_weights(input_ids: torch.Tensor, gpu_fc: GPUFeatureComputer, cpu_ch:
     return weights
 
 
-def sample_batch(token_ids: torch.Tensor, batch: int, seq_len: int, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+def sample_batch(token_ids: torch.Tensor, loss_mask: torch.Tensor, batch: int, seq_len: int,
+                 device: torch.device) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     max_start = max(1, len(token_ids) - seq_len - 1)
+    for _ in range(20):
+        starts = torch.randint(0, max_start, (batch,))
+        x = torch.stack([token_ids[start:start + seq_len] for start in starts]).to(device)
+        y = torch.stack([token_ids[start + 1:start + seq_len + 1] for start in starts]).to(device)
+        y_mask = torch.stack([loss_mask[start + 1:start + seq_len + 1] for start in starts]).to(device)
+        if y_mask.sum().item() > 0:
+            return x, y, y_mask
     starts = torch.randint(0, max_start, (batch,))
     x = torch.stack([token_ids[start:start + seq_len] for start in starts]).to(device)
     y = torch.stack([token_ids[start + 1:start + seq_len + 1] for start in starts]).to(device)
-    return x, y
+    y_mask = torch.stack([loss_mask[start + 1:start + seq_len + 1] for start in starts]).to(device)
+    return x, y, y_mask
 
 
-def eval_mode(model, rack, token_ids, vocab, gpu_fc, cpu_ch, device, mode: str, seq_len: int) -> float:
+def masked_ce(logits: torch.Tensor, targets: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    losses = F.cross_entropy(
+        logits.reshape(-1, logits.shape[-1]),
+        targets.reshape(-1),
+        reduction='none',
+    ).reshape_as(targets)
+    denom = mask.sum().clamp(min=1.0)
+    return (losses * mask).sum() / denom
+
+
+def eval_mode(model, rack, token_ids, loss_mask, vocab, gpu_fc, cpu_ch, device, mode: str, seq_len: int,
+              max_tokens: int | None = None) -> float:
     rack.activate('general-superposition', mode in {'superposition', 'chat'})
     rack.activate('chat-capability', mode == 'chat')
     nll = 0.0
     count = 0
+    eval_len = len(token_ids) if max_tokens is None or max_tokens <= 0 else min(len(token_ids), max_tokens)
     with torch.no_grad():
-        for start in range(0, len(token_ids) - 1, seq_len):
-            current_len = min(seq_len, len(token_ids) - start - 1)
+        for start in range(0, eval_len - 1, seq_len):
+            current_len = min(seq_len, eval_len - start - 1)
             if current_len <= 0:
                 continue
             x = token_ids[start:start + current_len].unsqueeze(0).to(device)
             y = token_ids[start + 1:start + current_len + 1].unsqueeze(0).to(device)
+            y_mask = loss_mask[start + 1:start + current_len + 1].unsqueeze(0).to(device)
             if mode != 'base':
                 rack.set_weights(compute_weights(x, gpu_fc, cpu_ch))
             logits = model(x)
-            nll += F.cross_entropy(logits.reshape(-1, vocab), y.reshape(-1), reduction='sum').item()
-            count += current_len
+            losses = F.cross_entropy(logits.reshape(-1, vocab), y.reshape(-1), reduction='none').reshape_as(y)
+            nll += (losses * y_mask).sum().item()
+            count += y_mask.sum().item()
     return math.exp(nll / max(count, 1))
+
+
+def build_chat_steerer(kind: str, d_model: int, bottleneck: int, noise_scale: float, device: torch.device):
+    if kind == 'v3':
+        return SuperpositionSteererV3(d_model=d_model, init_scale=0.01, noise_scale=noise_scale).to(device)
+    if kind == 'adapter':
+        return FeatureConditionedAdapterSteerer(
+            d_model=d_model,
+            bottleneck=bottleneck,
+            init_scale=0.01,
+            noise_scale=noise_scale,
+        ).to(device)
+    raise ValueError(f'unknown chat steerer kind: {kind}')
 
 
 def main():
@@ -111,6 +147,9 @@ def main():
     parser.add_argument('--seq-len', type=int, default=96)
     parser.add_argument('--lr', type=float, default=3e-3)
     parser.add_argument('--device', type=str, default='cuda')
+    parser.add_argument('--max-eval-tokens', type=int, default=12000)
+    parser.add_argument('--chat-steerer', choices=['v3', 'adapter'], default='v3')
+    parser.add_argument('--adapter-bottleneck', type=int, default=64)
     args = parser.parse_args()
 
     device = torch.device(args.device)
@@ -123,7 +162,11 @@ def main():
 
     train_ids = torch.load(REPO / args.data_dir / 'train_ids.pt', weights_only=False).long()
     val_ids = torch.load(REPO / args.data_dir / 'validation_ids.pt', weights_only=False).long()
-    print(f'[data] train={len(train_ids):,} val={len(val_ids):,}')
+    train_mask_path = REPO / args.data_dir / 'train_loss_mask.pt'
+    val_mask_path = REPO / args.data_dir / 'validation_loss_mask.pt'
+    train_mask = torch.load(train_mask_path, weights_only=False).float() if train_mask_path.exists() else torch.ones_like(train_ids, dtype=torch.float32)
+    val_mask = torch.load(val_mask_path, weights_only=False).float() if val_mask_path.exists() else torch.ones_like(val_ids, dtype=torch.float32)
+    print(f'[data] train={len(train_ids):,} val={len(val_ids):,} train_loss_tokens={int(train_mask.sum().item()):,} val_loss_tokens={int(val_mask.sum().item()):,}')
 
     base_ckpt = torch.load(REPO / args.base_model, map_location=device, weights_only=False)
     model, d_model, vocab = load_model_from_state(base_ckpt['state_dict'], device)
@@ -139,7 +182,7 @@ def main():
         param.requires_grad = False
     general.eval()
 
-    chat = SuperpositionSteererV3(d_model=d_model, init_scale=0.01, noise_scale=0.03).to(device)
+    chat = build_chat_steerer(args.chat_steerer, d_model, args.adapter_bottleneck, 0.03, device)
     chat.train()
     print(f'[chat] trainable params={sum(p.numel() for p in chat.parameters()):,}')
 
@@ -153,7 +196,9 @@ def main():
     rack.mount(
         CartridgeManifest('chat-capability', CartridgeRole.TASK_CAPABILITY,
                           base_model_id='c4-124m-v4', tokenizer_id='gpt2-bpe',
-                          source_corpus='synthetic-chat-seed'),
+                          steerer_class=chat.__class__.__name__,
+                          parameter_count=sum(p.numel() for p in chat.parameters()),
+                          source_corpus='chat-seed'),
         chat,
         weight=1.0,
     )
@@ -175,10 +220,10 @@ def main():
         t0 = time.time()
 
         for _ in range(args.steps):
-            x, y = sample_batch(train_ids, args.batch, args.seq_len, device)
+            x, y, y_mask = sample_batch(train_ids, train_mask, args.batch, args.seq_len, device)
             rack.set_weights(compute_weights(x, gpu_fc, cpu_ch))
             logits = model(x)
-            loss = F.cross_entropy(logits.reshape(-1, vocab), y.reshape(-1))
+            loss = masked_ce(logits, y, y_mask)
             loss = loss + 0.001 * chat.orthogonal_penalty()
             opt.zero_grad()
             loss.backward()
@@ -187,9 +232,9 @@ def main():
             total_loss += loss.item()
 
         chat.eval()
-        eval_base = eval_mode(model, rack, val_ids, vocab, gpu_fc, cpu_ch, device, 'base', args.seq_len)
-        eval_super = eval_mode(model, rack, val_ids, vocab, gpu_fc, cpu_ch, device, 'superposition', args.seq_len)
-        eval_chat = eval_mode(model, rack, val_ids, vocab, gpu_fc, cpu_ch, device, 'chat', args.seq_len)
+        eval_base = eval_mode(model, rack, val_ids, val_mask, vocab, gpu_fc, cpu_ch, device, 'base', args.seq_len, args.max_eval_tokens)
+        eval_super = eval_mode(model, rack, val_ids, val_mask, vocab, gpu_fc, cpu_ch, device, 'superposition', args.seq_len, args.max_eval_tokens)
+        eval_chat = eval_mode(model, rack, val_ids, val_mask, vocab, gpu_fc, cpu_ch, device, 'chat', args.seq_len, args.max_eval_tokens)
         avg_loss = total_loss / max(args.steps, 1)
         status = ''
         if eval_chat < best_chat:
@@ -197,6 +242,8 @@ def main():
             torch.save({
                 'steerer_state': chat.state_dict(),
                 'manifest': rack._mounted['chat-capability'].manifest.__dict__,
+                'steerer_class': chat.__class__.__name__,
+                'adapter_bottleneck': args.adapter_bottleneck,
                 'eval_base': eval_base,
                 'eval_superposition': eval_super,
                 'eval_chat': eval_chat,

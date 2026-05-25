@@ -7,6 +7,8 @@
 - Added focused tests for cartridge compatibility checks, multi-cartridge residual composition, incompatible-cartridge rejection, and per-cartridge channel feature updates.
 - Added a reusable CUDA probe for validating separate superposition/capability cartridges and weighted combined cartridge composition on GPU.
 - Added a seed chat dataset builder and frozen-base chat capability cartridge trainer; launched the first detached chat cartridge run on pe2 GPU 1.
+- Added assistant-response-only chat loss masks, capped validation, and a higher-capacity feature-conditioned adapter cartridge for task capabilities.
+- Added a cartridge chat runtime with checkpoint-aware cartridge loading, guarded decoding, repeated-tail stopping, and sentence-boundary response trimming; validated a first working chat cartridge on pe2.
 - Cleaned the open-source surface by removing archived legacy entry-point scripts from the tracked package and ignoring private archive/generated data outputs.
 
 ## 2026-05-22

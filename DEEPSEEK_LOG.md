@@ -2,6 +2,24 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 342 — Working adapter chat cartridge and runtime probe
+
+- Agent: GitHub Copilot, 2026-05-24.
+- Host: local dev workspace for code/data generation; pe2 Tesla M40 GPU 1 for chat cartridge training and probes. pe2 GPU 0 remained occupied by the larger base run; GPU 1 was used with `CUDA_VISIBLE_DEVICES=1`.
+- Method: Extended the chat path from the original compact `SuperpositionSteererV3` task cartridge (`16,796` params) to a higher-capacity `FeatureConditionedAdapterSteerer` task cartridge (`918,729` params). The adapter still exposes the same `_steer_layer` ABI and composes through `SteererCartridgeRack` beside the frozen general superposition steerer. Updated chat training to support assistant-only loss masks, zero-loss batch retry, capped validation via `--max-eval-tokens`, and selectable chat steerer classes. Updated chat inference with checkpoint-based steerer-class loading, repetition penalty, repeated-tail stopping, and sentence-boundary stopping.
+- Intermediate findings:
+  - Plain marker V3 chat cartridge: `eval_chat=11.8`, but greedy/free generation remained incoherent word salad; decoding was not the root cause.
+  - Assistant-response-only V3 cartridge on the synthetic seed corpus: `eval_chat=4.6` versus base `1138.7`, but free generation still looped on repetitive seed phrases.
+  - Mixed Alpaca V3 cartridge: capped-eval `eval_chat=123.3` versus base `568.0`; less symbol noise, but still looped and remained semantically weak.
+  - Adapter cartridge on mixed Alpaca: capped-eval `eval_chat=67.2` versus base `568.0`; numerically better, but broad instruction outputs were still not stable enough for a first chat interface.
+- Final v4 seed adapter run: Built `artifacts/chat_steerer_seed_v4/` with greeting and core chat/test/superposition examples oversampled plus fewer generic templates (`25,658` train tokens, `4,840` validation tokens, `9,174` train loss tokens). Trained on pe2: `CUDA_VISIBLE_DEVICES=1 ~/local_venvs/m40_env/bin/python hybrid/train_steerer_chat.py --base-model artifacts/steerer_v4/steerer_best_b.pt --general-steerer artifacts/steerer_v4/steerer_best_b.pt --data-dir artifacts/chat_steerer_seed_v4 --out-dir artifacts/steerer_chat_adapter_seed_v4 --epochs 28 --steps 35 --batch 4 --seq-len 96 --lr 1e-3 --max-eval-tokens 12000 --chat-steerer adapter --adapter-bottleneck 64 --device cuda`.
+- Final result: `eval_chat` improved to `1.5` on the v4 seed validation split while `eval_base=1149.2` and `eval_super=1233.8`. Best artifact: `artifacts/steerer_chat_adapter_seed_v4/chat_cartridge.pt` on pe2 and copied back locally as an ignored artifact, size about `11.1 MB`.
+- Qualitative probe: `hybrid/chat_cartridge.py` defaulting to `artifacts/steerer_chat_adapter_seed_v4/chat_cartridge.pt`, two-sentence stopping, and guarded decoding produced coherent first-turn answers:
+  - `Hello` -> `Hi. I am ready to help.`
+  - `What is a chat cartridge?` -> `A chat cartridge is a task capability cartridge that steers the frozen base model toward assistant-style responses. It can be loaded beside the general superposition steerer without merging weights into the base model.`
+  - `I am confused about superposition steering.` -> coherent clarification response in fixed-prompt probe.
+- Verdict: The project now has a working first chat interface using the frozen 124M base, a separately mounted general superposition steerer, and a separately mounted task capability chat cartridge. The result is a controlled seed-domain chat bootstrap, not a broadly instruction-tuned assistant; scaling to broad chat will require larger/more diverse training and likely a larger adapter or longer adapter training.
+
 ## 341 — First chat capability cartridge path and pe2 launch
 
 - Agent: GitHub Copilot, 2026-05-24.
