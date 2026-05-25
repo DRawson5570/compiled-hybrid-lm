@@ -2,6 +2,16 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 344 — Local RTX 3080 assistant adapter lane launched
+
+- Agent: GitHub Copilot, 2026-05-24.
+- Host: local dev workstation `msi`, RTX 3080 10GB, Python `.venv` with CUDA (`torch 2.5.1+cu121`). This runs alongside the existing pe2 overnight lane; pe2 GPU 1 remains on `adapter_alpaca50k_b128_long` and pe2 GPU 0 remains unused.
+- Method: Created ignored runtime script `logs/local_3080_chat_assistant.sh` and status file `logs/local_3080_chat_assistant_status.md`. The local lane uses the same broad dataset `artifacts/chat_steerer_alpaca50k/`, but explores larger/faster local configs: `local3080_alpaca50k_b192_fast`, `local3080_alpaca50k_b256_deeper`, and `local3080_alpaca50k_b384_polish`, with batch fallback to `2` on failure. It probes each checkpoint and copies the lowest `eval_chat` local candidate to `artifacts/steerer_chat_local3080_candidate/chat_cartridge.pt`.
+- Launch: Started detached local runner `local3080_20260524_224840` via `nohup`. Active runner PID `572322`, `tee` PID `572326`, first training child PID `572467`.
+- Initial live signal: local CUDA verified, 3080 available, then first active config `local3080_alpaca50k_b192_fast` started with `bottleneck=192`, `epochs=60`, `steps=220`, `batch=4`, `lr=5e-4`, and `max_eval_tokens=18000`. Observed GPU usage after launch: about `5.2 GiB` VRAM and `94%` utilization.
+- Logs/status: local `logs/local_3080_chat_assistant.nohup`, `logs/local_3080_chat_assistant_local3080_20260524_224840.log`, and `logs/local_3080_chat_assistant_status.md`. Repository memory note updated: `/memories/repo/deepseek_overnight_chat.md`.
+- Verdict: Local 3080 is now a second durable overnight assistant-training lane. Final morning verdict depends on completed checkpoints and probes.
+
 ## 343 — Overnight broad assistant adapter run launched
 
 - Agent: GitHub Copilot, 2026-05-24.
