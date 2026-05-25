@@ -70,11 +70,26 @@ GREETING_EXAMPLES = [
 ]
 
 
+BASIC_ASSISTANT_EXAMPLES = [
+    ('Give three tips for staying healthy.', '1. Eat balanced meals with plenty of fruits, vegetables, protein, and water.\n2. Move your body regularly, even if it is just a daily walk.\n3. Sleep enough and ask a medical professional about symptoms or major health changes.'),
+    ('Give me three tips for staying healthy.', '1. Eat balanced meals with plenty of fruits, vegetables, protein, and water.\n2. Move your body regularly, even if it is just a daily walk.\n3. Sleep enough and ask a medical professional about symptoms or major health changes.'),
+    ('Explain gravity in simple terms.', 'Gravity is the pull that objects with mass have on each other. It keeps your feet on the ground and keeps planets moving around the Sun.'),
+    ('Explain gravity like I am new to physics.', 'Gravity is an attractive force between things that have mass. Bigger objects pull more strongly, which is why Earth pulls us toward the ground.'),
+    ('Write a short Python function that adds two numbers.', 'def add_numbers(a, b):\n    return a + b'),
+    ('Write a Python function that adds two numbers.', 'def add_numbers(a, b):\n    return a + b'),
+    ('What is 2 + 2?', '2 + 2 = 4.'),
+    ('Name one safe next step when debugging.', 'Reproduce the problem with the smallest command or input that still fails.'),
+    ('Summarize your answer in one sentence.', 'The shortest useful answer is usually the one that states the result and the next action clearly.'),
+    ('What should you do when you are not sure?', 'Say what is known, say what is uncertain, and suggest the next check that would resolve it.'),
+]
+
+
 FOCUSED_CHAT_EXAMPLES = [
     ('What is a chat cartridge?', 'A chat cartridge is a task capability cartridge that steers the frozen base model toward assistant-style responses. It can be loaded beside the general superposition steerer without merging weights into the base model.'),
     ('Explain what a chat cartridge is in two sentences.', 'A chat cartridge is a small task-specific adapter that nudges the frozen language model toward conversational behavior. It is separate from the general superposition steerer, so it can be loaded, disabled, or replaced independently.'),
     ('Give me three practical next steps for testing this model.', 'First, define the behavior you expect. Second, run fixed prompts in base, superposition, and chat modes. Third, save the outputs and compare them before changing the cartridge.'),
     ('I am confused about superposition steering.', 'That is a reasonable place to pause. For superposition steering, the useful move is to separate what is known from what still needs a direct check.'),
+    *BASIC_ASSISTANT_EXAMPLES,
 ]
 
 
@@ -91,7 +106,7 @@ def encode_transcript(user: str, assistant: str, tokenizer) -> tuple[list[int], 
 
 
 def generate_examples(rounds: int, anchor_repeat: int = 24, focused_repeat: int = 24) -> list[tuple[str, str]]:
-    examples = list(SEED_EXAMPLES)
+    examples = list(SEED_EXAMPLES) + list(BASIC_ASSISTANT_EXAMPLES)
     for _ in range(anchor_repeat):
         examples.extend(GREETING_EXAMPLES)
     for _ in range(focused_repeat):

@@ -39,6 +39,20 @@ def test_trainable_surface_freezes_everything_except_named_params():
     assert not model.ln_f.weight.requires_grad
 
 
+def test_head_bias_and_embeddings_surface_keeps_tied_output_weights_live():
+    model = TinyBackbone()
+    model.tok_emb = nn.Embedding(8, 3)
+    model.pos_emb = nn.Embedding(4, 3)
+
+    names = set_trainable_surface(model, TrainableSurface.head_bias_and_embeddings())
+
+    assert names == ('head_bias', 'tok_emb.weight', 'pos_emb.weight')
+    assert model.head_bias.requires_grad
+    assert model.tok_emb.weight.requires_grad
+    assert model.pos_emb.weight.requires_grad
+    assert not model.layers[0].weight.requires_grad
+
+
 def test_trainable_surface_rejects_missing_parameter():
     with pytest.raises(ValueError):
         set_trainable_surface(TinyBackbone(), TrainableSurface.from_names(['missing.weight']))

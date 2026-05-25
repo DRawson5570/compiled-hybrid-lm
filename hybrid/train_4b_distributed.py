@@ -73,6 +73,8 @@ def main():
     p.add_argument("--seq-len", type=int, default=128)
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--steerer-lr", type=float, default=1e-3)
+    p.add_argument("--train-surface", choices=["head_bias", "cmi_steerer"], default="cmi_steerer")
+    p.add_argument("--eval-tokens", type=int, default=2000)
     p.add_argument("--zeroq-path", default="~/ZeroQ")
     args = p.parse_args()
 
@@ -80,7 +82,7 @@ def main():
     hostname = socket.gethostname()
     model_cfg = MODEL_CONFIGS[args.model_config]
     _rank0_print(rank, f"=== CMI BACKEND TRAIN === Rank {rank}/{world_size} {hostname}")
-    _rank0_print(rank, f"backend={args.backend} config={args.model_config} d={model_cfg['d_model']} L={model_cfg['n_layers']} epochs={args.epochs} batch={args.batch}")
+    _rank0_print(rank, f"backend={args.backend} config={args.model_config} surface={args.train_surface} d={model_cfg['d_model']} L={model_cfg['n_layers']} epochs={args.epochs} batch={args.batch}")
 
     # Build model on CPU; the selected backend decides whether to move densely
     # or stream frozen weights through ZeroQ quantized partitioning.
@@ -95,23 +97,32 @@ def main():
         backend = ZeroQPartitionedBackend(device=device, zeroq_path=args.zeroq_path)
     else:
         backend = DenseTorchBackend(device=device)
-    handle = backend.prepare(model, TrainableSurface.head_bias())
+    handle = backend.prepare(model, TrainableSurface.head_bias_and_embeddings())
+    # Embeddings must stay materialized for weight-tied output, but should be frozen
+    # (only head_bias, ln_f, and steerer are actually trained)
+    model.tok_emb.weight.requires_grad = False
+    model.pos_emb.weight.requires_grad = False
     _rank0_print(rank, f"[{args.backend}] Prepared in {time.time()-t0:.1f}s stats={handle.memory_stats()}")
 
-    _rank0_print(rank, "[build] CMI compiled-prior steerer...")
-    steerer = SuperpositionSteererV3(d_model=model_cfg['d_model'], init_scale=0.01, noise_scale=0.05).to(device)
-    n_hooks = steerer.register_hooks(model)
+    steerer = None
+    n_hooks = 0
+    if args.train_surface == "cmi_steerer":
+        _rank0_print(rank, "[build] CMI compiled-prior steerer...")
+        steerer = SuperpositionSteererV3(d_model=model_cfg['d_model'], init_scale=0.01, noise_scale=0.05).to(device)
+        n_hooks = steerer.register_hooks(model)
     model_trainable = sum(param.numel() for param in trainable_parameters(model))
-    steerer_trainable = sum(param.numel() for param in steerer.parameters())
+    steerer_trainable = sum(param.numel() for param in steerer.parameters()) if steerer is not None else 0
     _rank0_print(rank, f"  hooks={n_hooks} model_trainable={model_trainable:,} steerer_trainable={steerer_trainable:,}")
 
     # Load compiled priors
-    _rank0_print(rank, "[load] Compiled priors...")
-    word_topics, pos_tags, ppmi_emb = load_priors(device)
-    gpu_fc = GPUFeatureComputer(V=V, punct_ids=PUNCT_IDS, topic_matrix=word_topics,
-                                pos_tags=pos_tags, ppmi_embeddings=ppmi_emb, device=device)
+    gpu_fc = None
+    if steerer is not None:
+        _rank0_print(rank, "[load] Compiled priors...")
+        word_topics, pos_tags, ppmi_emb = load_priors(device)
+        gpu_fc = GPUFeatureComputer(V=V, punct_ids=PUNCT_IDS, topic_matrix=word_topics,
+                                    pos_tags=pos_tags, ppmi_embeddings=ppmi_emb, device=device)
     cpu_ch = FastNgramFeatures(V)
-    _rank0_print(rank, "  21 channels ready")
+    _rank0_print(rank, "  21 channels ready" if steerer is not None else "  compiled steerer disabled for memory-safe smoke")
 
     # Load training data
     _rank0_print(rank, "[load] Data...")
@@ -127,8 +138,7 @@ def main():
 
     opt = torch.optim.AdamW([
         {'params': trainable_parameters(model), 'lr': args.lr},
-        {'params': steerer.parameters(), 'lr': args.steerer_lr},
-    ])
+    ] + ([{'params': steerer.parameters(), 'lr': args.steerer_lr}] if steerer is not None else []))
     best_eval_b = float('inf')
 
     for ep in range(1, args.epochs + 1):
@@ -142,35 +152,41 @@ def main():
             y = y.to(device, non_blocking=True)
             w_cpu = w_cpu.to(device, non_blocking=True)
 
-            w_gpu = gpu_fc.compute_features(x)
-            w_gpu[:, :, 0:9] = w_cpu[:, :, :9]
-
-            steerer.set_weights(w_gpu)
+            if steerer is not None:
+                w_gpu = gpu_fc.compute_features(x)
+                w_gpu[:, :, 0:9] = w_cpu[:, :, :9]
+                steerer.set_weights(w_gpu)
             out = model(x)
             loss = F.cross_entropy(out.logits.reshape(-1, V), y.reshape(-1))
-            loss = loss + 0.001 * steerer.orthogonal_penalty()
+            if steerer is not None:
+                loss = loss + 0.001 * steerer.orthogonal_penalty()
 
             opt.zero_grad(set_to_none=True)
             loss.backward()
             _manual_allreduce_grads(model, world_size)
-            _manual_allreduce_grads(steerer, world_size)
+            if steerer is not None:
+                _manual_allreduce_grads(steerer, world_size)
             opt.step()
             total_loss += loss.item()
 
         # Eval
-        model.eval(); steerer.eval()
+        model.eval()
+        if steerer is not None:
+            steerer.eval()
         with torch.no_grad():
             es_nll, es_n = 0.0, 0
             cpu_ch = FastNgramFeatures(V)
-            for s in range(0, min(len(val_ids) - 1, 2000), 128):
+            eval_limit = min(len(val_ids) - 1, max(args.eval_tokens, 1))
+            for s in range(0, eval_limit, 128):
                 cl = min(128, len(val_ids) - s - 1)
                 if cl <= 0: continue
                 inp = val_ids[s:s+cl].unsqueeze(0).to(device)
                 tgt = val_ids[s+1:s+cl+1].unsqueeze(0).to(device)
-                w_e = gpu_fc.compute_features(inp)
-                w_cpu_eval = compute_cpu_features(val_ids[s:s+cl].tolist(), cpu_ch)
-                w_e[0, :w_cpu_eval.shape[0], 0:9] = w_cpu_eval[:, :9].to(device)
-                steerer.set_weights(w_e)
+                if steerer is not None:
+                    w_e = gpu_fc.compute_features(inp)
+                    w_cpu_eval = compute_cpu_features(val_ids[s:s+cl].tolist(), cpu_ch)
+                    w_e[0, :w_cpu_eval.shape[0], 0:9] = w_cpu_eval[:, :9].to(device)
+                    steerer.set_weights(w_e)
                 logits = model(inp).logits
                 es_nll += F.cross_entropy(logits.reshape(-1, V), tgt.reshape(-1), reduction='sum').item()
                 es_n += cl
@@ -183,9 +199,10 @@ def main():
             out_dir = os.path.expanduser("~/deepseek_experiments/artifacts/train_3b")
             os.makedirs(out_dir, exist_ok=True)
             torch.save({'state_dict': model.state_dict(),
-                        'steerer_state': steerer.state_dict(),
+                        'steerer_state': steerer.state_dict() if steerer is not None else None,
                         'backend': args.backend,
                         'model_config': args.model_config,
+                        'train_surface': args.train_surface,
                         'epoch': ep,
                         'eval_s': eval_s},
                        os.path.join(out_dir, 'best.pt'))

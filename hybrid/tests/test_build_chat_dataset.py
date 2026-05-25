@@ -7,6 +7,7 @@ DEEPSEEK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(DEEPSEEK.parent))
 
 from hybrid.build_chat_dataset import (
+    BASIC_ASSISTANT_EXAMPLES,
     FOCUSED_CHAT_EXAMPLES,
     GREETING_EXAMPLES,
     SEED_EXAMPLES,
@@ -18,7 +19,7 @@ from hybrid.build_chat_dataset import (
 def test_generate_examples_exposes_anchor_repeats():
     examples = generate_examples(rounds=2, anchor_repeat=3, focused_repeat=5)
 
-    expected = len(SEED_EXAMPLES) + 3 * len(GREETING_EXAMPLES) + 5 * len(FOCUSED_CHAT_EXAMPLES) + 2 * 3
+    expected = len(SEED_EXAMPLES) + len(BASIC_ASSISTANT_EXAMPLES) + 3 * len(GREETING_EXAMPLES) + 5 * len(FOCUSED_CHAT_EXAMPLES) + 2 * 3
     assert len(examples) == expected
     assert examples.count(GREETING_EXAMPLES[0]) == 3 + 1
     assert examples.count(FOCUSED_CHAT_EXAMPLES[0]) == 5 + 1

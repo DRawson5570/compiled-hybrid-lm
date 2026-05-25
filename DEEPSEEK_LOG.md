@@ -2,6 +2,19 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 357 — pe3 3B ZeroQ smoke fixed: head-bias surface completes 3 epochs
+
+- Agent: GitHub Copilot, 2026-05-25.
+- Host: pe3, two Tesla M40 12GB GPUs, `~/local_venvs/m40_env`.
+- Initial failure: `--train-surface cmi_steerer` on `--model-config 3b` OOMed in ZeroQ forward gather during `ffn2`, with each GPU near `11.07 GiB` used and only about `102 MiB` free. The compiled steerer path backpropagates through the frozen backbone and needs a future activation-checkpoint/custom-backward design for this model size.
+- Fix: added explicit `--train-surface head_bias|cmi_steerer`, kept embeddings materialized for the tied output projection via `TrainableSurface.head_bias_and_embeddings()`, then froze embeddings before optimizer construction. Added `--eval-tokens` so pe3 smoke tests do not spend minutes evaluating 2K tokens through ZeroQ gather/release.
+- Successful command: `CUDA_VISIBLE_DEVICES=0,1 ~/local_venvs/m40_env/bin/torchrun --nproc_per_node=2 --nnodes=1 --node_rank=0 --master_addr=localhost --master_port=29545 hybrid/train_4b_distributed.py --backend zeroq --model-config 3b --train-surface head_bias --epochs 3 --steps 1 --batch 1 --seq-len 16 --eval-tokens 128 --lr 1e-4 --zeroq-path ~/ZeroQ`.
+- Result: 2,911,828,945-param model prepared with ZeroQ stats `local_memory_mb=744.4`, `full_fp16_memory_mb=5293.5`, `compression_ratio=7.11`, `num_params=386`; `model_trainable=50,257`, `steerer_trainable=0`. GPU memory during the safe path stayed around `1.5-1.8 GiB/GPU`.
+- Epochs: epoch 1 `loss=11.5136 eval_s=92825.7`; epoch 2 `loss=11.1965 eval_s=92821.2`; epoch 3 `loss=11.5116 eval_s=92816.5`; run exited 0.
+- Artifact: pe3 `~/deepseek_experiments/artifacts/train_3b/best.pt`, size `546,175,828` bytes, metadata `backend=zeroq`, `model_config=3b`, `train_surface=head_bias`, `epoch=3`, `eval_s=92816.46129795471`, `steerer_state=None`.
+- Validation: local `.venv/bin/python -m pytest hybrid/tests/test_backends.py hybrid/tests/test_hf_deepseek.py hybrid/tests/test_build_chat_dataset.py -q` -> `7 passed`; local `py_compile` for changed trainer/backend/chat files passed; pe3 `py_compile` for trainer/backend passed.
+- Verdict: DeepSeek's pe3 3B crash is fixed for the memory-safe smoke path. Full compiled-steerer training on the 3B ZeroQ backbone remains a separate engineering step, likely requiring activation checkpointing or a custom no-grad frozen-backbone adapter path.
+
 ## 356 — Local anchor chatbot lane completed: best b384 candidate still mixed
 
 - Agent: GitHub Copilot, 2026-05-25.

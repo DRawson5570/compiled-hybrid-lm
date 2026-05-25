@@ -50,6 +50,11 @@ class TrainableSurface:
     def head_bias(cls) -> 'TrainableSurface':
         return cls(('head_bias',))
 
+    @classmethod
+    def head_bias_and_embeddings(cls) -> 'TrainableSurface':
+        """Include embeddings for weight-tied output projection."""
+        return cls(('head_bias', 'tok_emb.weight', 'pos_emb.weight'))
+
 
 def set_trainable_surface(
     model: nn.Module,
@@ -181,6 +186,9 @@ class ZeroQPartitionedBackend:
         not_available = getattr(status_cls, 'NOT_AVAILABLE')
         for zq_param in params.values():
             if getattr(zq_param, 'status') != not_available:
+                continue
+            # Never partition params that the surface wants trainable (head_bias, etc.)
+            if zq_param.param.requires_grad:
                 continue
             full_precision = zq_param.param.data.to(device=device)
             zq_param.partition_from_full_precision(full_precision)
