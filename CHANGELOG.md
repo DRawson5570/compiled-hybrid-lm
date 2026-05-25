@@ -5,6 +5,7 @@
 - Added a cartridge manifest and `SteererCartridgeRack` runtime API so independent superposition steerer cartridges and domain/task capability cartridges can be mounted, weighted, hot-swapped, and additively composed through one residual-stream hook rack.
 - Documented the dual-cartridge architecture across product, strategy, infrastructure, and README docs, including manifest compatibility fields and side-by-side loading semantics.
 - Added focused tests for cartridge compatibility checks, multi-cartridge residual composition, incompatible-cartridge rejection, and per-cartridge channel feature updates.
+- Added a reusable CUDA probe for validating separate superposition/capability cartridges and weighted combined cartridge composition on GPU.
 - Cleaned the open-source surface by removing archived legacy entry-point scripts from the tracked package and ignoring private archive/generated data outputs.
 
 ## 2026-05-22

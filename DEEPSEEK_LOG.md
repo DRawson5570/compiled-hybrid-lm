@@ -2,6 +2,16 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 340 — pe3 CUDA validation of side-by-side cartridge composition
+
+- Agent: GitHub Copilot, 2026-05-24.
+- Host: local RTX 3080 smoke run plus pe3 Tesla M40 GPU 1 validation. pe3 GPU 0 was busy; GPU 1 was free and used via `CUDA_VISIBLE_DEVICES=1`. Python on pe3: `~/local_venvs/m40_env/bin/python`, PyTorch `2.7.1+cu118`.
+- Method: Added `hybrid/tests/probe_cartridge_cuda.py`, a manual CUDA probe using the real `SuperpositionSteererV3` and `SteererCartridgeRack`. The probe mounts a `SUPERPOSITION_STEERER` cartridge alone, a `DOMAIN_CAPABILITY` cartridge alone, then both together with weights `alpha=0.75`, `beta=0.40`. It verifies both separate cartridges produce nonzero residual deltas and that the combined rack output equals `base + alpha*(superposition_only-base) + beta*(capability_only-base)` within numerical tolerance.
+- Local smoke command: `/home/drawson/deepseek_experiments/.venv/bin/python hybrid/tests/probe_cartridge_cuda.py` -> passed on NVIDIA GeForce RTX 3080, max absolute error `2.384185791015625e-07`.
+- pe3 command: `ssh pe3 "cd ~/deepseek_experiments && CUDA_VISIBLE_DEVICES=1 ~/local_venvs/m40_env/bin/python hybrid/tests/probe_cartridge_cuda.py"` -> passed on Tesla M40, max absolute error `2.384185791015625e-07`, superposition delta norm `0.32769954204559326`, capability delta norm `0.3276995122432709`, combined delta norm `0.28647175431251526`.
+- Cleanup: Removed the accidental extra remote copy path from the first rsync attempt (`~/deepseek_experiments/hybrid/hybrid`). pe3 workspace is not a Git checkout, so no remote git state was affected.
+- Verdict: Separate superposition steering cartridges, separate domain capability cartridges, and weighted combined cartridge composition all work on CUDA/M40 with exact additive behavior in the single-layer rack probe.
+
 ## 339 — Open-source repo hygiene cleanup
 
 - Agent: GitHub Copilot, 2026-05-24.
