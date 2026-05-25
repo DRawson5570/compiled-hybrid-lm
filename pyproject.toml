@@ -20,6 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 gpu = ["bitsandbytes>=0.41"]
+data = ["datasets>=4.8"]
 dev = ["pytest>=7.0", "nltk>=3.8"]
 
 [project.urls]

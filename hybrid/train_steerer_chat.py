@@ -181,6 +181,8 @@ def main():
     parser.add_argument('--max-eval-tokens', type=int, default=12000)
     parser.add_argument('--chat-steerer', choices=['v3', 'adapter'], default='v3')
     parser.add_argument('--adapter-bottleneck', type=int, default=64)
+    parser.add_argument('--resume-chat-cartridge', type=str, default=None,
+                        help='Initialize the chat cartridge from a previous chat_cartridge.pt checkpoint')
     args = parser.parse_args()
 
     device = torch.device(args.device)
@@ -217,6 +219,11 @@ def main():
     general.eval()
 
     chat = build_chat_steerer(args.chat_steerer, d_model, args.adapter_bottleneck, 0.03, device)
+    if args.resume_chat_cartridge:
+        resume_path = REPO / args.resume_chat_cartridge
+        resume_ckpt = torch.load(resume_path, map_location=device, weights_only=False)
+        chat.load_state_dict(resume_ckpt['steerer_state'])
+        print(f'[chat] resumed from {resume_path}')
     chat.train()
     print(f'[chat] trainable params={sum(p.numel() for p in chat.parameters()):,}')
 
@@ -285,6 +292,7 @@ def main():
                 'eval_superposition': eval_super,
                 'eval_chat': eval_chat,
                 'epoch': epoch,
+                'resume_chat_cartridge': args.resume_chat_cartridge,
                 'opt_state': opt.state_dict(),
             }, out_dir / 'chat_cartridge.pt')
             status = 'SAVED'
