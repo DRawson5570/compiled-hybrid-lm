@@ -135,15 +135,19 @@ class SteererCartridgeRack:
 
         def make_hook(layer_idx: int):
             def hook_fn(module, inputs, output):
-                if not torch.is_tensor(output):
+                hidden = output[0] if isinstance(output, tuple) else output
+                if not torch.is_tensor(hidden):
                     return output
-                total_delta = torch.zeros_like(output)
+                total_delta = torch.zeros_like(hidden)
                 for mounted in self._mounted.values():
                     if not mounted.active or layer_idx not in mounted.manifest.inject_layers:
                         continue
-                    steered = mounted.steerer._steer_layer(output, layer_idx)
-                    total_delta = total_delta + mounted.weight * (steered - output)
-                return output + total_delta
+                    steered = mounted.steerer._steer_layer(hidden, layer_idx)
+                    total_delta = total_delta + mounted.weight * (steered - hidden)
+                result = (hidden + total_delta).to(dtype=hidden.dtype)
+                if isinstance(output, tuple):
+                    return (result,) + output[1:]
+                return result
             return hook_fn
 
         for layer_idx in target_layers:

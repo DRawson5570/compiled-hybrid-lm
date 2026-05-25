@@ -29,6 +29,21 @@ class DummyTransformer(nn.Module):
         return x
 
 
+class TupleLayer(nn.Module):
+    def forward(self, x):
+        return x, 'cache'
+
+
+class TupleTransformer(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.layers = nn.ModuleList([TupleLayer()])
+
+    def forward(self, x):
+        hidden, cache = self.layers[0](x)
+        return hidden, cache
+
+
 class FakeSteerer(nn.Module):
     def __init__(self, delta: float):
         super().__init__()
@@ -100,3 +115,17 @@ def test_rack_sets_channel_weights_for_all_or_one_cartridge():
 
     assert steer_a.seen_weights is first
     assert steer_b.seen_weights is second
+
+
+def test_rack_preserves_tuple_outputs_and_hidden_dtype():
+    model = TupleTransformer()
+    rack = SteererCartridgeRack()
+    rack.mount(manifest('qwen-task', CartridgeRole.TASK_CAPABILITY), FakeSteerer(1.0), weight=0.25)
+
+    assert rack.register_hooks(model) == 1
+    x = torch.zeros(1, 2, 4, dtype=torch.float16)
+    hidden, cache = model(x)
+
+    assert cache == 'cache'
+    assert hidden.dtype == torch.float16
+    assert torch.allclose(hidden, torch.full_like(hidden, 0.25))

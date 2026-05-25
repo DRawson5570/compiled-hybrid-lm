@@ -2,6 +2,17 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 346 — Corrected Life-Harness validation path for cartridge technology
+
+- Agent: GitHub Copilot, 2026-05-24.
+- Correction: Entry 345 validated a Life-Harness-style runtime adaptation, not the intended question. The intended question is whether our cartridge/superposition technology can be exercised through their testing mechanism. Treat 345 as a useful harness-control baseline, not proof of our cartridge stack.
+- Method: Updated `SteererCartridgeRack` so it works with Hugging Face/Qwen decoder layers that return tuples and preserves the base hidden-state dtype after additive cartridge composition. Updated the Qwen OpenAI-compatible server in the Life-Harness research copy to mount `SuperpositionSteererV3` through our `CartridgeManifest` + `SteererCartridgeRack` ABI instead of ad hoc hooks. Added a standalone TauBench direct adapter for running their orchestrator/evaluator around our direct Qwen cartridge model.
+- Validation: `/home/drawson/deepseek_experiments/.venv/bin/python -m pytest hybrid/tests/test_cartridges.py` -> `4 passed`. `python -m py_compile hybrid/cartridges.py self-improvement-research/Life-Harness/qwen_cartridge_server.py self-improvement-research/Life-Harness/TauBench/scripts/eval_qwen_cartridge_direct.py` -> passed.
+- Endpoint smoke on pe3 GPU 1: Qwen server started with `Cartridge rack mounted: 10 hooks, 32,925 params`; `/health` returned `{"status":"ok","steering":false}`; baseline `/v1/chat/completions` returned `200`; `/cartridge/reload` loaded `artifacts/qwen_self_improve/cartridge_best.pt` and `/health` returned `{"status":"ok","steering":true}`. The initial steered endpoint found and fixed a real dtype bug (`Float` vs `Half`) in rack composition.
+- TauBench smoke: `scripts/eval_harness.py` successfully entered the real TauBench airline runner against `openai/qwen-cartridge` via an SSH tunnel to the pe3 server and wrote `data/simulations/qwen_cartridge/20260524_231304_baseline_smoke/results.json`, but no simulation completed after 10 minutes on M40. This is a throughput limitation, not an integration failure; run the same endpoint on the local 3080 after the assistant lane frees up for a completed baseline-vs-cartridge comparison.
+- Cleanup: Stopped the long TauBench run, SSH tunnel, and pe3 Qwen server. pe3 GPUs returned to `0 MiB`.
+- Verdict: The corrected integration path now uses our cartridge ABI inside their test mechanism. Full benchmark scoring still needs a faster GPU or a lighter mock-domain smoke; the M40 airline run is too slow for interactive validation.
+
 ## 345 — Life-Harness runtime self-improvement loop validated
 
 - Agent: GitHub Copilot, 2026-05-24.
