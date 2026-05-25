@@ -3,12 +3,11 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PE2_REPO="${PE2_REPO:-/home/drawson/deepseek_experiments}"
-PE2_PYTHON="${PE2_PYTHON:-/home/drawson/local_venvs/m40_env/bin/python}"
 PE2_TORCHRUN="${PE2_TORCHRUN:-/home/drawson/local_venvs/m40_env/bin/torchrun}"
 CHECKPOINT="${CHECKPOINT:-artifacts/train_4b_cmi_steerer_zeroq_4bit/best.pt}"
 EPOCHS="${EPOCHS:-}"
 STEPS="${STEPS:-50}"
-BATCH="${BATCH:-1}"
+BATCH="${BATCH:-2}"
 SEQ_LEN="${SEQ_LEN:-64}"
 EVAL_TOKENS="${EVAL_TOKENS:-512}"
 LR="${LR:-1e-4}"
@@ -17,29 +16,31 @@ PORT="${PORT:-29567}"
 GPUS="${GPUS:-0,1}"
 FOREGROUND=0
 SYNC=1
+FRESH=0
 
 usage() {
   cat <<'USAGE'
 Usage: ./resume_pe2_4b_zeroq_4bit.sh --epochs N [options]
 
-Options:
-  --epochs N          Additional epochs to run from the current checkpoint.
-  --steps N           Steps per epoch. Default: 50
-  --batch N           Batch size. Default: 1
-  --seq-len N         Sequence length. Default: 64
-  --eval-tokens N     Eval tokens. Default: 512
-  --lr X              Model-surface learning rate. Default: 1e-4
-  --steerer-lr X      Steerer learning rate. Default: 1e-4
-  --checkpoint PATH   Checkpoint on pe2 to resume. Default: artifacts/train_4b_cmi_steerer_zeroq_4bit/best.pt
-  --port N            torchrun master port. Default: 29567
-  --gpus LIST         CUDA_VISIBLE_DEVICES list. Default: 0,1
-  --no-sync           Do not rsync trainer/backend files before launch.
-  --foreground        Run attached instead of detached nohup.
+  --fresh               Start from scratch (no checkpoint required)
+  --epochs N            Number of epochs to run.
+  --steps N             Steps per epoch. Default: 50
+  --batch N             Batch size. Default: 2
+  --seq-len N           Sequence length. Default: 64
+  --eval-tokens N       Eval tokens. Default: 512
+  --lr X                Model-surface learning rate. Default: 1e-4
+  --steerer-lr X        Steerer learning rate. Default: 1e-4
+  --checkpoint PATH     Checkpoint on pe2 to resume. Default: artifacts/train_4b_cmi_steerer_zeroq_4bit/best.pt
+  --port N              torchrun master port. Default: 29567
+  --gpus LIST           CUDA_VISIBLE_DEVICES list. Default: 0,1
+  --no-sync             Do not rsync trainer/backend files before launch.
+  --foreground          Run attached instead of detached nohup.
 USAGE
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --fresh) FRESH=1; shift ;;
     --epochs) EPOCHS="$2"; shift 2 ;;
     --steps) STEPS="$2"; shift 2 ;;
     --batch) BATCH="$2"; shift 2 ;;
@@ -70,14 +71,29 @@ if [[ "$SYNC" == "1" ]]; then
     pe2:"$PE2_REPO/hybrid/"
 fi
 
-REMOTE_CMD=$(cat <<REMOTE
+# Build resume arg
+RESUME_FLAG=""
+if [[ "$FRESH" != "1" ]]; then
+  RESUME_FLAG="--resume-checkpoint ${CHECKPOINT}"
+fi
+
+# Write the remote command to a script, scp it, and run it
+REMOTE_SCRIPT="/tmp/launch_4b_$$.sh"
+cat > "/tmp/launch_4b_local_$$.sh" << EOF
+#!/usr/bin/env bash
 set -euo pipefail
 cd "$PE2_REPO"
-test -f "$CHECKPOINT"
+
+# Kill existing runs
+pkill -f 'train_4b_distributed' 2>/dev/null || true
+sleep 2
+
 mkdir -p artifacts/logs
 ts=\$(date +%Y%m%d_%H%M%S)
-log="artifacts/logs/resume_4b_cmi_steerer_zeroq_4bit_\${ts}.log"
-cmd=(env CUDA_VISIBLE_DEVICES="$GPUS" ZEROQ_DISABLE_ALL_GATHER_INTO_TENSOR=1 "$PE2_TORCHRUN"
+log="artifacts/logs/train_4b_4bit_\${ts}.log"
+
+cmd=(
+  env CUDA_VISIBLE_DEVICES="$GPUS" ZEROQ_DISABLE_ALL_GATHER_INTO_TENSOR=1 "$PE2_TORCHRUN"
   --nproc_per_node=2
   --nnodes=1
   --node_rank=0
@@ -96,17 +112,20 @@ cmd=(env CUDA_VISIBLE_DEVICES="$GPUS" ZEROQ_DISABLE_ALL_GATHER_INTO_TENSOR=1 "$P
   --steerer-lr "$STEERER_LR"
   --zeroq-path /home/drawson/ZeroQ
   --compute-in-4bit
-  --resume-checkpoint "$CHECKPOINT")
-echo "CHECKPOINT=$CHECKPOINT"
+  $RESUME_FLAG
+)
+
 echo "LOG=\$log"
-echo "CMD=\${cmd[*]}"
-if [[ "$FOREGROUND" == "1" ]]; then
+echo "CMD=\${cmd[@]}"
+
+if [[ "${FOREGROUND}" == "1" ]]; then
   "\${cmd[@]}" 2>&1 | tee "\$log"
 else
   nohup "\${cmd[@]}" > "\$log" 2>&1 &
   echo "PID=\$!"
 fi
-REMOTE
-)
+EOF
 
-ssh pe2 "$REMOTE_CMD"
+scp "/tmp/launch_4b_local_$$.sh" "pe2:${REMOTE_SCRIPT}" >/dev/null 2>&1
+ssh pe2 "bash ${REMOTE_SCRIPT}"
+rm -f "/tmp/launch_4b_local_$$.sh"

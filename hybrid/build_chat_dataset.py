@@ -62,6 +62,9 @@ SEED_EXAMPLES: list[tuple[str, str]] = [
 IDENTITY_AND_FACT_EXAMPLES = [
     ('I am your creator, Douglas.', 'It is nice to meet you, Douglas. I am ready to help.'),
     ('My name is Douglas.', 'Nice to meet you, Douglas. What would you like to work on?'),
+    ('What is your name?', 'My name is CMI. I am your cartridge-guided assistant.'),
+    ('What should I call you?', 'You can call me CMI.'),
+    ('Are you Douglas?', 'No. I am CMI, the assistant. Douglas is the creator of this project.'),
     ('Who created you?', 'Douglas Rawson created this CMI cartridge assistant in the deepseek_experiments project.'),
     ('What is the capital of France?', 'The capital of France is Paris.'),
     ('Capital of France?', 'Paris is the capital of France.'),
@@ -76,6 +79,22 @@ IDENTITY_AND_FACT_EXAMPLES = [
     ('France?', 'If you mean the capital of France, it is Paris.'),
     ('What is quantum mechanics?', 'Quantum mechanics is the branch of physics that describes how very small things like atoms and particles behave.'),
     ('Explain quantum mechanics simply.', 'Quantum mechanics studies matter and energy at tiny scales, where particles can behave in ways that do not match everyday intuition.'),
+]
+
+
+INSTRUCTION_FOLLOWING_EXAMPLES = [
+    ('Tell me a story. You choose the length and the topic.', 'Once there was a small repair robot that lived in a quiet workshop. Every night it organized the scattered tools, and every morning the mechanic found exactly what was needed. One day the robot found a broken music box, fixed its tiny spring, and filled the whole shop with a song no one had heard in years.'),
+    ('Tell me a short story about a star.', 'A small star thought it was too dim to matter. Then a lost traveler used its faint light to find the road home, and the star learned that even a quiet glow can be enough.'),
+    ('Write a tiny bedtime story.', 'The moon tucked silver light under the window, and a sleepy child counted the shadows on the wall. By the time the last shadow waved goodnight, the room was calm and the child was dreaming.'),
+    ('Make up a story about a curious machine.', 'A curious machine woke up in a library and began sorting books by the feelings hidden inside them. It placed brave books near frightened ones, funny books near lonely ones, and by morning every shelf felt like a conversation.'),
+    ('Give me a creative paragraph about rain.', 'Rain stitched silver lines across the street, turning every window into a small moving painting. The city grew quieter, not because it had nothing to say, but because it was listening.'),
+    ('Explain photosynthesis simply.', 'Photosynthesis is how plants use sunlight, water, and carbon dioxide to make sugar for energy. As part of that process, they release oxygen into the air.'),
+    ('Compare cats and dogs in two sentences.', 'Cats are often more independent and quiet, while dogs usually seek more direct social interaction. Both can be affectionate companions, but they tend to show it in different ways.'),
+    ('Write three bullet points about planning a project.', '- Define the goal and the success criteria.\n- Break the work into small testable steps.\n- Review progress often and adjust the plan when evidence changes.'),
+    ('Rewrite this politely: send me the file now.', 'Could you please send me the file when you have a chance?'),
+    ('Brainstorm five names for a helpful AI assistant.', '1. CMI\n2. Guidepost\n3. Clearline\n4. Atlas\n5. Brightpath'),
+    ('What is your name?', 'My name is CMI. I am here to help.'),
+    ('Who are you?', 'I am CMI, a cartridge-guided assistant built to answer directly and help with practical work.'),
 ]
 
 
@@ -194,13 +213,14 @@ def encode_example(example: ChatExample, tokenizer) -> tuple[list[int], list[int
 
 
 def generate_examples(rounds: int, anchor_repeat: int = 24, focused_repeat: int = 24) -> list[ChatExample]:
-    examples = list(SEED_EXAMPLES) + list(BASIC_ASSISTANT_EXAMPLES) + list(PRODUCTION_ASSISTANT_EXAMPLES)
+    examples = list(SEED_EXAMPLES) + list(BASIC_ASSISTANT_EXAMPLES) + list(PRODUCTION_ASSISTANT_EXAMPLES) + list(INSTRUCTION_FOLLOWING_EXAMPLES)
     examples.extend(MULTITURN_EXAMPLES)
     for _ in range(anchor_repeat):
         examples.extend(GREETING_EXAMPLES)
     for _ in range(focused_repeat):
         examples.extend(FOCUSED_CHAT_EXAMPLES)
         examples.extend(IDENTITY_AND_FACT_EXAMPLES)
+        examples.extend(INSTRUCTION_FOLLOWING_EXAMPLES)
         examples.extend(MULTITURN_EXAMPLES)
     for i in range(rounds):
         topic = TOPICS[i % len(TOPICS)]
@@ -252,18 +272,29 @@ def load_alpaca_examples(count: int) -> list[tuple[str, str]]:
 def encode_split(examples: list[ChatExample], tokenizer, val_fraction: float):
     split = max(1, int(len(examples) * (1.0 - val_fraction)))
 
-    def encode_many(items: list[ChatExample]):
-        ids: list[int] = []
-        mask: list[int] = []
+    def encode_items(items: list[ChatExample]):
+        encoded = []
         for example in items:
             item_ids, item_mask = encode_example(example, tokenizer)
-            ids.extend(item_ids)
-            mask.extend(item_mask)
+            encoded.append({
+                'ids': torch.tensor(item_ids, dtype=torch.long),
+                'mask': torch.tensor(item_mask, dtype=torch.float32),
+            })
+        return encoded
+
+    def flatten(encoded):
+        ids: list[int] = []
+        mask: list[int] = []
+        for item in encoded:
+            ids.extend(item['ids'].tolist())
+            mask.extend(item['mask'].tolist())
         return torch.tensor(ids, dtype=torch.long), torch.tensor(mask, dtype=torch.float32)
 
-    train_ids, train_mask = encode_many(examples[:split])
-    val_ids, val_mask = encode_many(examples[split:])
-    return train_ids, train_mask, val_ids, val_mask
+    train_examples = encode_items(examples[:split])
+    val_examples = encode_items(examples[split:])
+    train_ids, train_mask = flatten(train_examples)
+    val_ids, val_mask = flatten(val_examples)
+    return train_ids, train_mask, val_ids, val_mask, train_examples, val_examples
 
 
 def main():
@@ -288,12 +319,14 @@ def main():
         focused_repeat=args.focused_repeat,
         shuffle_seed=args.shuffle_seed,
     )
-    train_ids, train_mask, val_ids, val_mask = encode_split(examples, tokenizer, args.val_fraction)
+    train_ids, train_mask, val_ids, val_mask, train_examples, val_examples = encode_split(examples, tokenizer, args.val_fraction)
 
     torch.save(train_ids, out_dir / 'train_ids.pt')
     torch.save(train_mask, out_dir / 'train_loss_mask.pt')
     torch.save(val_ids, out_dir / 'validation_ids.pt')
     torch.save(val_mask, out_dir / 'validation_loss_mask.pt')
+    torch.save(train_examples, out_dir / 'train_examples.pt')
+    torch.save(val_examples, out_dir / 'validation_examples.pt')
     (out_dir / 'README.txt').write_text(
         f'Chat cartridge seed corpus\ntrain_tokens={len(train_ids)}\nval_tokens={len(val_ids)}\nexamples={len(examples)}\nsynthetic_rounds={args.rounds}\nalpaca_count={args.alpaca_count}\nanchor_repeat={args.anchor_repeat}\nfocused_repeat={args.focused_repeat}\nshuffle_seed={args.shuffle_seed}\nassistant_loss_only=1\nassistant_eos=1\n',
         encoding='utf-8',

@@ -88,6 +88,37 @@ def sample_batch(token_ids: torch.Tensor, loss_mask: torch.Tensor, batch: int, s
     return x, y, y_mask
 
 
+def sample_example_batch(examples: list[dict[str, torch.Tensor]], batch: int, seq_len: int,
+                         device: torch.device, pad_id: int = 50256) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    xs: list[torch.Tensor] = []
+    ys: list[torch.Tensor] = []
+    masks: list[torch.Tensor] = []
+    for _ in range(batch):
+        item = examples[int(torch.randint(0, len(examples), ()).item())]
+        ids = item['ids'].long()
+        loss_mask = item['mask'].float()
+        if len(ids) <= seq_len + 1:
+            pad_len = seq_len + 1 - len(ids)
+            window_ids = torch.cat([ids, torch.full((pad_len,), pad_id, dtype=torch.long)])
+            window_mask = torch.cat([loss_mask, torch.zeros(pad_len, dtype=torch.float32)])
+        else:
+            max_start = len(ids) - seq_len - 1
+            loss_positions = torch.nonzero(loss_mask > 0, as_tuple=False).flatten()
+            if len(loss_positions) and torch.rand(()).item() < 0.8:
+                first_loss = int(loss_positions[0].item())
+                low = max(0, first_loss - seq_len + 8)
+                high = min(first_loss, max_start)
+                start = int(torch.randint(low, high + 1, ()).item()) if high >= low else min(first_loss, max_start)
+            else:
+                start = int(torch.randint(0, max_start + 1, ()).item())
+            window_ids = ids[start:start + seq_len + 1]
+            window_mask = loss_mask[start:start + seq_len + 1]
+        xs.append(window_ids[:-1])
+        ys.append(window_ids[1:])
+        masks.append(window_mask[1:])
+    return torch.stack(xs).to(device), torch.stack(ys).to(device), torch.stack(masks).to(device)
+
+
 def masked_ce(logits: torch.Tensor, targets: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     losses = F.cross_entropy(
         logits.reshape(-1, logits.shape[-1]),
@@ -166,7 +197,10 @@ def main():
     val_mask_path = REPO / args.data_dir / 'validation_loss_mask.pt'
     train_mask = torch.load(train_mask_path, weights_only=False).float() if train_mask_path.exists() else torch.ones_like(train_ids, dtype=torch.float32)
     val_mask = torch.load(val_mask_path, weights_only=False).float() if val_mask_path.exists() else torch.ones_like(val_ids, dtype=torch.float32)
-    print(f'[data] train={len(train_ids):,} val={len(val_ids):,} train_loss_tokens={int(train_mask.sum().item()):,} val_loss_tokens={int(val_mask.sum().item()):,}')
+    train_examples_path = REPO / args.data_dir / 'train_examples.pt'
+    train_examples = torch.load(train_examples_path, weights_only=False) if train_examples_path.exists() else None
+    example_count = len(train_examples) if train_examples is not None else 0
+    print(f'[data] train={len(train_ids):,} val={len(val_ids):,} train_loss_tokens={int(train_mask.sum().item()):,} val_loss_tokens={int(val_mask.sum().item()):,} examples={example_count:,}')
 
     base_ckpt = torch.load(REPO / args.base_model, map_location=device, weights_only=False)
     model, d_model, vocab = load_model_from_state(base_ckpt['state_dict'], device)
@@ -220,7 +254,10 @@ def main():
         t0 = time.time()
 
         for _ in range(args.steps):
-            x, y, y_mask = sample_batch(train_ids, train_mask, args.batch, args.seq_len, device)
+            if train_examples is not None:
+                x, y, y_mask = sample_example_batch(train_examples, args.batch, args.seq_len, device)
+            else:
+                x, y, y_mask = sample_batch(train_ids, train_mask, args.batch, args.seq_len, device)
             rack.set_weights(compute_weights(x, gpu_fc, cpu_ch))
             logits = model(x)
             loss = masked_ce(logits, y, y_mask)
