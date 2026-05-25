@@ -2,6 +2,15 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 353 — Broad chatbot continuation: anchor-heavy dataset controls
+
+- Agent: GitHub Copilot, 2026-05-25.
+- Host: local dev workstation for code/test. pe2 launch follows this scaffolding entry.
+- Goal: Continue the general chatbot cartridge lane. The previous pe2 broad Alpaca run reached low `eval_chat` (`30.7357` best at `adapter_alpaca50k_b384_long`) but qualitative probes drifted into code fragments, generic advice, and wrong physics, so loss alone was not selecting a capable assistant.
+- Method: Updated `hybrid/build_chat_dataset.py` with `--anchor-repeat`, `--focused-repeat`, and `--shuffle-seed`. This lets the next broad dataset keep high-density greeting/chat-cartridge/testing anchors while still mixing Alpaca examples, and prevents validation from being only the tail of the Alpaca dataset.
+- Validation: `.venv/bin/python -m pytest hybrid/tests/test_build_chat_dataset.py hybrid/tests/test_cartridge_harness.py hybrid/tests/test_cartridges.py` -> `13 passed`; `.venv/bin/python -m py_compile hybrid/build_chat_dataset.py hybrid/train_steerer_chat.py hybrid/chat_cartridge.py` -> passed.
+- Next: sync the updated builder/test to pe2 and launch a detached GPU-1 anchor-heavy broad assistant cartridge run.
+
 ## 352 — Owned cartridge self-improvement harness added
 
 - Agent: GitHub Copilot, 2026-05-25.

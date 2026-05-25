@@ -4,6 +4,7 @@
 
 - Added `hybrid.cartridge_harness`, an owned self-improvement harness for cartridge research/building with task/scoring primitives, private-fact task generation, baseline-vs-cartridge comparison, and an optional Qwen adapter-cartridge trainer/CLI.
 - Documented that Life-Harness is now only an optional external test mechanism; cartridge construction, scoring, artifacts, and result accounting live in the CMI repo.
+- Added anchor-repeat and deterministic shuffle controls to the chat dataset builder so broad assistant cartridge training can preserve core assistant behavior while mixing in Alpaca examples.
 
 ## 2026-05-24
 

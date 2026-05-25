@@ -7,6 +7,7 @@ dataset. Larger public chat corpora can replace or extend this artifact later.
 from __future__ import annotations
 
 import argparse
+import random
 import sys
 from pathlib import Path
 
@@ -89,11 +90,11 @@ def encode_transcript(user: str, assistant: str, tokenizer) -> tuple[list[int], 
     return ids, mask
 
 
-def generate_examples(rounds: int) -> list[tuple[str, str]]:
+def generate_examples(rounds: int, anchor_repeat: int = 24, focused_repeat: int = 24) -> list[tuple[str, str]]:
     examples = list(SEED_EXAMPLES)
-    for _ in range(24):
+    for _ in range(anchor_repeat):
         examples.extend(GREETING_EXAMPLES)
-    for _ in range(24):
+    for _ in range(focused_repeat):
         examples.extend(FOCUSED_CHAT_EXAMPLES)
     for i in range(rounds):
         topic = TOPICS[i % len(TOPICS)]
@@ -109,6 +110,15 @@ def generate_examples(rounds: int) -> list[tuple[str, str]]:
             f'I am confused about {topic}.',
             f'That is a reasonable place to pause. For {topic}, the useful move is to separate what is known from what still needs a direct check.',
         ))
+    return examples
+
+
+def build_examples(rounds: int, alpaca_count: int, anchor_repeat: int,
+                   focused_repeat: int, shuffle_seed: int | None) -> list[tuple[str, str]]:
+    examples = generate_examples(rounds, anchor_repeat, focused_repeat)
+    examples.extend(load_alpaca_examples(alpaca_count))
+    if shuffle_seed is not None:
+        random.Random(shuffle_seed).shuffle(examples)
     return examples
 
 
@@ -155,6 +165,9 @@ def main():
     parser.add_argument('--out-dir', type=str, default='artifacts/chat_steerer')
     parser.add_argument('--rounds', type=int, default=80)
     parser.add_argument('--alpaca-count', type=int, default=0)
+    parser.add_argument('--anchor-repeat', type=int, default=24)
+    parser.add_argument('--focused-repeat', type=int, default=24)
+    parser.add_argument('--shuffle-seed', type=int, default=None)
     parser.add_argument('--val-fraction', type=float, default=0.15)
     args = parser.parse_args()
 
@@ -162,8 +175,13 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     tokenizer = AutoTokenizer.from_pretrained('gpt2')
-    examples = generate_examples(args.rounds)
-    examples.extend(load_alpaca_examples(args.alpaca_count))
+    examples = build_examples(
+        rounds=args.rounds,
+        alpaca_count=args.alpaca_count,
+        anchor_repeat=args.anchor_repeat,
+        focused_repeat=args.focused_repeat,
+        shuffle_seed=args.shuffle_seed,
+    )
     train_ids, train_mask, val_ids, val_mask = encode_split(examples, tokenizer, args.val_fraction)
 
     torch.save(train_ids, out_dir / 'train_ids.pt')
@@ -171,7 +189,7 @@ def main():
     torch.save(val_ids, out_dir / 'validation_ids.pt')
     torch.save(val_mask, out_dir / 'validation_loss_mask.pt')
     (out_dir / 'README.txt').write_text(
-        f'Chat cartridge seed corpus\ntrain_tokens={len(train_ids)}\nval_tokens={len(val_ids)}\nexamples={len(examples)}\nsynthetic_rounds={args.rounds}\nalpaca_count={args.alpaca_count}\nassistant_loss_only=1\n',
+        f'Chat cartridge seed corpus\ntrain_tokens={len(train_ids)}\nval_tokens={len(val_ids)}\nexamples={len(examples)}\nsynthetic_rounds={args.rounds}\nalpaca_count={args.alpaca_count}\nanchor_repeat={args.anchor_repeat}\nfocused_repeat={args.focused_repeat}\nshuffle_seed={args.shuffle_seed}\nassistant_loss_only=1\n',
         encoding='utf-8',
     )
 
