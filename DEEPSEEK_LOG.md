@@ -2,6 +2,18 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 354 — pe3 ZeroQ distributed 3B backbone smoke is live under 2 GiB/GPU
+
+- Agent: GitHub Copilot, 2026-05-25.
+- Host: pe3, two Tesla M40 12GB GPUs, `~/local_venvs/m40_env`, running from `~/deepseek_experiments/hybrid`.
+- Live command: `torchrun --nproc_per_node=2 --nnodes=1 --node_rank=0 --master_addr=localhost --master_port=29521 train_4b_distributed.py --epochs 100 --batch 2 --steps 500`.
+- Observed state: ranks are live and both GPUs are busy at about `1.77 GiB / 11.52 GiB` each with `98%` utilization. Processes include torchrun parent PID `1464400` and rank workers `1464441`/`1464442` plus DataLoader workers.
+- Model scope: `train_4b_distributed.py` config is `d_model=2688`, `n_layers=32`, `n_heads=21`, `d_ff=10752`, `max_len=512`, estimated at `2,911,879,202` parameters. Despite the filename, the script docstring calls it a `3B model`.
+- ZeroQ mechanism: imports `~/ZeroQ`, wraps the model with `ZeroQCoordinator(MAXWELL_CONFIG)` and `ZeroQModuleWrapper`, then streams parameter partitioning with `partition_from_full_precision(...)`. This is the source of the extremely low GPU memory footprint.
+- Important caveat: after partitioning, the script freezes all model parameters and sets only `model.head_bias.requires_grad = True`, so the current run trains only `50,257` parameters (`~0.0017%` of the model). It loads compiled priors and builds `GPUFeatureComputer`, but the training loop still has `TODO: add steerer hooks to inject priors as activation offsets`; compiled priors are not yet affecting the forward pass.
+- Artifact state: no `artifacts/train_3b/best.pt` had appeared at inspection time.
+- Verdict: Major systems proof: a ~2.9B frozen ZeroQ-partitioned backbone can run across pe3's two M40s at far below 4GB total visible model VRAM. Next technical step is to make the trainable surface meaningful: add cartridge/compiled-prior activation hooks or train a small adapter/LoRA-style surface on top of the partitioned backbone rather than only `head_bias`.
+
 ## 353 — Broad chatbot continuation: anchor-heavy dataset controls
 
 - Agent: GitHub Copilot, 2026-05-25.
