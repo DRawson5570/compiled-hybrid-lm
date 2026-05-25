@@ -138,6 +138,28 @@ if [[ -n "$MATCHES" && "$FORCE_KILL" == "1" ]]; then
   echo "$MATCHES" | cut -f1 | while read -r pid; do
     [[ -n "$pid" ]] && kill "$pid" 2>/dev/null || true
   done
+  for _ in {1..10}; do
+    REMAINING="$(find_matching_pids || true)"
+    [[ -z "$REMAINING" ]] && break
+    sleep 1
+  done
+  REMAINING="$(find_matching_pids || true)"
+  if [[ -n "$REMAINING" ]]; then
+    echo "$REMAINING" | cut -f1 | while read -r pid; do
+      [[ -n "$pid" ]] && kill -9 "$pid" 2>/dev/null || true
+    done
+  fi
+  for _ in {1..5}; do
+    REMAINING="$(find_matching_pids || true)"
+    [[ -z "$REMAINING" ]] && break
+    sleep 1
+  done
+  REMAINING="$(find_matching_pids || true)"
+  if [[ -n "$REMAINING" ]]; then
+    echo "Error: matching 700M processes still running after --force-kill:" >&2
+    echo "$REMAINING" >&2
+    exit 4
+  fi
 fi
 
 RESUME_ARGS=()
