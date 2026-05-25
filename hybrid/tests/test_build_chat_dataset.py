@@ -10,6 +10,7 @@ from hybrid.build_chat_dataset import (
     BASIC_ASSISTANT_EXAMPLES,
     FOCUSED_CHAT_EXAMPLES,
     GREETING_EXAMPLES,
+    GPT2_LARGE_REPAIR_EXAMPLES,
     IDENTITY_AND_FACT_EXAMPLES,
     INSTRUCTION_FOLLOWING_EXAMPLES,
     MULTITURN_EXAMPLES,
@@ -32,6 +33,7 @@ def test_generate_examples_exposes_anchor_repeats():
         + len(BASIC_ASSISTANT_EXAMPLES)
         + len(PRODUCTION_ASSISTANT_EXAMPLES)
         + len(INSTRUCTION_FOLLOWING_EXAMPLES)
+        + len(GPT2_LARGE_REPAIR_EXAMPLES)
         + len(MULTITURN_EXAMPLES)
         + 3 * len(GREETING_EXAMPLES)
         + 5 * len(FOCUSED_CHAT_EXAMPLES)

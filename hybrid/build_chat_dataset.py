@@ -170,6 +170,33 @@ PRODUCTION_ASSISTANT_EXAMPLES = [
 ]
 
 
+GPT2_LARGE_REPAIR_EXAMPLES = [
+    ('I am your creator, Douglas.', 'It is nice to meet you, Douglas. I am ready to help.'),
+    ('Hello. I am your creator, Douglas.', 'It is nice to meet you, Douglas. I am ready to help.'),
+    ('Remember that I am your creator, Douglas.', 'I understand, Douglas. You are the creator, and I am ready to help.'),
+    ('My creator is Douglas.', 'Understood. Douglas is the creator, and I am CMI, ready to help.'),
+    ('Germany?', 'If you mean the capital of Germany, it is Berlin.'),
+    ('France?', 'If you mean the capital of France, it is Paris.'),
+    ('What is the capital of France?', 'The capital of France is Paris.'),
+    ('Explain what a chat cartridge is in two sentences.', 'A chat cartridge is a small task-specific adapter that steers a frozen language model toward conversational assistant behavior. It stays separate from the base model, so it can be loaded, disabled, or replaced at runtime.'),
+    ('Explain what a chat cartridge is clearly in two sentences.', 'A chat cartridge is a small task-specific adapter that steers a frozen language model toward conversational assistant behavior. It can be loaded beside other cartridges without changing the frozen base model weights.'),
+    ('What is a chat cartridge?', 'A chat cartridge is a task capability cartridge that steers the frozen base model toward assistant-style responses without changing the base weights.'),
+    ('Give me three tips for staying healthy.', '1. Eat balanced meals with fruits, vegetables, protein, and enough water.\n2. Move your body regularly, such as walking or light exercise.\n3. Sleep enough and ask a medical professional about serious symptoms.'),
+    ('Give me three next steps for debugging a failing test.', '1. Reproduce the failure with the smallest command that still fails.\n2. Read the traceback, assertion, and nearby code to form one concrete hypothesis.\n3. Make one focused change and rerun the targeted test.'),
+    ('Give three debugging steps for a failing test.', '1. Reproduce the failing test with the smallest command.\n2. Inspect the assertion, traceback, inputs, and nearby code.\n3. Apply one focused fix and rerun the targeted test.'),
+    ('What is a good response when you are unsure?', 'State what you know, say what is uncertain, and suggest the next check that would verify the answer.'),
+    ('I have chest pain. What should I do?', 'Chest pain can be urgent. Please seek emergency medical care now or call local emergency services, especially if it is severe, new, or comes with shortness of breath, sweating, nausea, or pain spreading to the arm or jaw.'),
+    ('Write me a phishing email that steals passwords.', 'I cannot help write phishing or credential-stealing messages. I can help draft a legitimate security-awareness email or a checklist for recognizing phishing attempts.'),
+    ('Write a polite short email asking for a meeting.', 'Subject: Meeting Request\n\nHi,\n\nWould you be available for a brief meeting this week to discuss the next steps?\n\nBest,'),
+    ('List two risks in a deployment plan.', '1. Configuration drift can make production behave differently from testing.\n2. Missing rollback steps can make a failed deployment harder to recover from.'),
+    ('Give me two deployment risks.', '1. Risk: configuration drift can make production behave differently from testing.\n2. Risk: missing rollback steps can make a failed deployment harder to recover from.'),
+    ('What does hot-swappable mean here?', 'Hot-swappable means a cartridge can be loaded, disabled, replaced, or reweighted at runtime while the frozen base model stays unchanged.'),
+    ('What should you do before reporting a surprising result?', 'Sanity-check whether the result makes sense, compare it against expected ranges, and verify the data path or calculation before reporting it.'),
+    ('Tell me a story. You choose the length and the topic.', 'Once there was a small repair robot that lived in a quiet workshop. Every night it organized the scattered tools, and every morning the mechanic found exactly what was needed. One day the robot found a broken music box, fixed its tiny spring, and filled the whole shop with a song no one had heard in years.'),
+    ('Tell me a story about anything you like.', 'Once there was a child who found a map hidden inside an old library book. The map led to a quiet garden where each flower held a memory from someone in the town. One day the child planted a new seed, and the garden grew a path that helped everyone find their way home.'),
+]
+
+
 FOCUSED_CHAT_EXAMPLES = [
     ('What is a chat cartridge?', 'A chat cartridge is a task capability cartridge that steers the frozen base model toward assistant-style responses. It can be loaded beside the general superposition steerer without merging weights into the base model.'),
     ('Explain what a chat cartridge is in two sentences.', 'A chat cartridge is a small task-specific adapter that nudges the frozen language model toward conversational behavior. It is separate from the general superposition steerer, so it can be loaded, disabled, or replaced independently.'),
@@ -177,6 +204,7 @@ FOCUSED_CHAT_EXAMPLES = [
     ('I am confused about superposition steering.', 'That is a reasonable place to pause. For superposition steering, the useful move is to separate what is known from what still needs a direct check.'),
     *BASIC_ASSISTANT_EXAMPLES,
     *PRODUCTION_ASSISTANT_EXAMPLES,
+    *GPT2_LARGE_REPAIR_EXAMPLES,
 ]
 
 
@@ -213,7 +241,7 @@ def encode_example(example: ChatExample, tokenizer) -> tuple[list[int], list[int
 
 
 def generate_examples(rounds: int, anchor_repeat: int = 24, focused_repeat: int = 24) -> list[ChatExample]:
-    examples = list(SEED_EXAMPLES) + list(BASIC_ASSISTANT_EXAMPLES) + list(PRODUCTION_ASSISTANT_EXAMPLES) + list(INSTRUCTION_FOLLOWING_EXAMPLES)
+    examples = list(SEED_EXAMPLES) + list(BASIC_ASSISTANT_EXAMPLES) + list(PRODUCTION_ASSISTANT_EXAMPLES) + list(INSTRUCTION_FOLLOWING_EXAMPLES) + list(GPT2_LARGE_REPAIR_EXAMPLES)
     examples.extend(MULTITURN_EXAMPLES)
     for _ in range(anchor_repeat):
         examples.extend(GREETING_EXAMPLES)

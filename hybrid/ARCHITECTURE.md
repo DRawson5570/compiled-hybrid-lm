@@ -267,6 +267,34 @@ Maxwell (SM 5.2) requires **bitsandbytes == 0.41.3** with **triton == 3.3.1**. B
 
 ## 6. Cartridge System
 
+### GPT-2-Large ZeroQ Assistant Lane
+
+The web-demo assistant lane can run a frozen Hugging Face GPT-2-family substrate
+under ZeroQ on a single RTX 3080 while training only a CMI task cartridge. The
+runtime entry points are:
+
+- `hybrid/train_gpt2_zeroq_chat.py` — trains a `FeatureConditionedAdapterSteerer`
+    against assistant-only chat loss while the GPT-2-large substrate remains
+    frozen and ZeroQ-partitioned.
+- `hybrid/gpt2_zeroq_assistant.py` — loads the frozen ZeroQ substrate plus an
+    optional cartridge and can generate baseline-vs-cartridge side-by-side JSON.
+- `hybrid/eval_gpt2_zeroq_assistant.py` — scores the same side-by-side runtime
+    on the assistant gate used for the small-base cartridge lane.
+
+GPT-2 ties `lm_head.weight` to `transformer.wte.weight`, so the ZeroQ GPT-2 lane
+keeps token and position embeddings resident on the GPU as frozen parameters and
+partitions the remaining backbone weights. This avoids output-projection device
+mismatch while preserving the cartridge-only optimization contract.
+
+The current selected demo candidate is
+`artifacts/gpt2_large_zeroq_chat_3080_prod_v4_gate/latest_chat_cartridge.pt`.
+It scores `21/24` on the side-by-side assistant gate versus raw GPT-2-large at
+`6/24`, with clear wins on greeting, facts, science, project definitions,
+health lists, coding, arithmetic, safety refusal, writing, and hot-swapping. The
+known misses are still story length, creator-name anchoring, and one contextual
+France prompt, so it is a strong side-by-side demo candidate rather than the end
+state for the 4B assistant lane.
+
 ### CartridgeManifest
 
 Each cartridge carries metadata for compatibility checking:
