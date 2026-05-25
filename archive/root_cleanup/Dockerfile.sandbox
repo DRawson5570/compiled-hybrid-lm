@@ -1,6 +1,0 @@
-FROM python:3.11-slim
-WORKDIR /app
-COPY . /app
-RUN pip install torch psutil scikit-learn --index-url https://download.pytorch.org/whl/cpu
-EXPOSE 8850
-CMD ["python", "-u", "sandbox_api_server.py", "8850"]
