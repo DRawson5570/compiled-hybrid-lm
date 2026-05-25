@@ -6,6 +6,7 @@
 - Documented the dual-cartridge architecture across product, strategy, infrastructure, and README docs, including manifest compatibility fields and side-by-side loading semantics.
 - Added focused tests for cartridge compatibility checks, multi-cartridge residual composition, incompatible-cartridge rejection, and per-cartridge channel feature updates.
 - Added a reusable CUDA probe for validating separate superposition/capability cartridges and weighted combined cartridge composition on GPU.
+- Added a seed chat dataset builder and frozen-base chat capability cartridge trainer; launched the first detached chat cartridge run on pe2 GPU 1.
 - Cleaned the open-source surface by removing archived legacy entry-point scripts from the tracked package and ignoring private archive/generated data outputs.
 
 ## 2026-05-22

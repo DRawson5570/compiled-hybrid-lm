@@ -2,6 +2,21 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 341 — First chat capability cartridge path and pe2 launch
+
+- Agent: GitHub Copilot, 2026-05-24.
+- Host: local dev workspace for code/data generation; pe2 Tesla M40 GPU 1 for smoke and detached training. pe2 GPU 0 was occupied by the 350M base model run; GPU 1 was free and used via `CUDA_VISIBLE_DEVICES=1`.
+- Method: Added `hybrid/build_chat_dataset.py` to create a compact GPT-2-tokenized seed chat corpus with system/user/assistant/end turn markers. Added `hybrid/train_steerer_chat.py`, which freezes the 124M base checkpoint, freezes an existing V4 superposition steerer, mounts both through `SteererCartridgeRack`, and trains only a separate `TASK_CAPABILITY` chat cartridge (`16,796` trainable params). Built `artifacts/chat_steerer/` locally with `30,834` train tokens, `5,446` validation tokens, and `380` synthetic chat-format examples, then synced scripts, chat tokens, compiled priors, and V4 checkpoints to pe2.
+- Local verification:
+  - `/home/drawson/deepseek_experiments/.venv/bin/python hybrid/build_chat_dataset.py --rounds 120 --out-dir artifacts/chat_steerer` -> wrote the tokenized seed corpus.
+  - `/home/drawson/deepseek_experiments/.venv/bin/python -m py_compile hybrid/build_chat_dataset.py hybrid/train_steerer_chat.py` -> passed.
+  - `/home/drawson/deepseek_experiments/.venv/bin/python hybrid/train_steerer_chat.py --help` -> imports and parses.
+  - `/home/drawson/deepseek_experiments/.venv/bin/python -m pytest hybrid/tests/` -> 63 passed, 7 warnings.
+- pe2 smoke command: `CUDA_VISIBLE_DEVICES=1 ~/local_venvs/m40_env/bin/python hybrid/train_steerer_chat.py --base-model artifacts/steerer_v4/steerer_best_b.pt --general-steerer artifacts/steerer_v4/steerer_best_b.pt --out-dir artifacts/steerer_chat_smoke --epochs 1 --steps 2 --batch 2 --seq-len 64 --lr 3e-3 --device cuda` -> passed, saved a smoke cartridge, `eval_chat=3337.8` after two optimizer steps.
+- Detached pe2 launch: PID `908645`, log `~/deepseek_experiments/logs/steerer_chat_gpu1.log`, command `CUDA_VISIBLE_DEVICES=1 ~/local_venvs/m40_env/bin/python hybrid/train_steerer_chat.py --base-model artifacts/steerer_v4/steerer_best_b.pt --general-steerer artifacts/steerer_v4/steerer_best_b.pt --out-dir artifacts/steerer_chat --epochs 60 --steps 20 --batch 4 --seq-len 64 --lr 3e-3 --device cuda`.
+- Early result: by epoch 16, `eval_chat` improved `597.6 -> 27.8` while `eval_base=7875.3` and `eval_super=8003.6` on the chat-format validation split, confirming the separate chat capability cartridge is learning the dialogue surface rather than relying on the base/general steerer alone.
+- Verdict: Chat capability cartridges are now an implemented and live training path. This first dataset is intentionally small and synthetic, so its result is a capability/bootstrap proof, not a final chat-quality benchmark.
+
 ## 340 — pe3 CUDA validation of side-by-side cartridge composition
 
 - Agent: GitHub Copilot, 2026-05-24.
