@@ -42,6 +42,8 @@ hybrid/archive/
 
 # Local run helpers
 hybrid/resume_*.sh
+hybrid/smoke_test_4b.py
+hybrid/train_4b.py
 
 # Accidental image conversion outputs
 /math

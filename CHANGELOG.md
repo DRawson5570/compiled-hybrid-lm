@@ -2,6 +2,9 @@
 
 ## 2026-05-25
 
+- Added a backend execution layer for CMI Hybrid with dense PyTorch and optional ZeroQ-partitioned backends, plus trainable-surface helpers for huge frozen or mostly-frozen backbones.
+- Refactored the distributed 3B DeepSeek/ZeroQ trainer to use the backend layer and train a compiled-prior `SuperpositionSteererV3` cartridge surface instead of leaving compiled features unused.
+- Added tests proving the ZeroQ backend contract with a fake coordinator and verifying the explicit DeepSeek backbone still exposes the cartridge hook ABI.
 - Added `hybrid.cartridge_harness`, an owned self-improvement harness for cartridge research/building with task/scoring primitives, private-fact task generation, baseline-vs-cartridge comparison, and an optional Qwen adapter-cartridge trainer/CLI.
 - Documented that Life-Harness is now only an optional external test mechanism; cartridge construction, scoring, artifacts, and result accounting live in the CMI repo.
 - Added anchor-repeat and deterministic shuffle controls to the chat dataset builder so broad assistant cartridge training can preserve core assistant behavior while mixing in Alpaca examples.

@@ -65,6 +65,17 @@ CartridgeManifest(
 
 The runtime mounts compatible cartridges into a `SteererCartridgeRack`, sets live compiled channel features once per generation step, and sums active residual deltas. This preserves the ability to load a standalone superposition steerer beside domain capability cartridges rather than baking the steerer into a single domain package.
 
+## Backend Substrate
+
+CMI Hybrid treats model execution as a backend choice below the cartridge ABI:
+
+| Backend | Use |
+|---|---|
+| `DenseTorchBackend` | Normal PyTorch execution when the frozen backbone fits directly on one device. |
+| `ZeroQPartitionedBackend` | Huge frozen or mostly-frozen backbones whose weights need 4-bit quantized ZeRO-style partitioning across GPUs. |
+
+The cartridge rack, manifests, and compiled-prior features do not change between backends. A training run chooses a small trainable surface such as `head_bias`, adapter parameters, or a cartridge steerer, while ZeroQ owns only the memory/execution mechanics of the frozen substrate. This keeps the thesis centered on compiled structure plus cartridges rather than full-model brute-force SGD.
+
 ## Owned Cartridge Research Harness
 
 Cartridge self-improvement research now lives under `hybrid.cartridge_harness` instead of the external Life-Harness workspace. The harness owns the pieces needed for product research: task definitions, strict scorers, baseline-vs-cartridge row capture, split summaries, fail-to-pass comparison, and optional Qwen adapter-cartridge training.

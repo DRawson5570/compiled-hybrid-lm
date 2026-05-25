@@ -2,6 +2,27 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 356 — Local anchor chatbot lane completed: best b384 candidate still mixed
+
+- Agent: GitHub Copilot, 2026-05-25.
+- Host: local RTX 3080, project `.venv`, run `local_anchor_20260525_055642` via ignored `logs/local_anchor_chat_assistant.sh`.
+- Dataset: reused `artifacts/chat_steerer_anchor_alpaca12k` (`15,148` examples, `2,346,070` train tokens, `329,426` val tokens, `anchor_repeat=300`, `focused_repeat=300`, `alpaca_count=12000`).
+- Result: `local_anchor12k_b384` completed 90 epochs, best `eval_chat=38.515242`; `local_anchor12k_b512` completed 90 epochs, best `eval_chat=38.8`. The selector copied `artifacts/steerer_chat_local_anchor12k_b384/chat_cartridge.pt` to `artifacts/steerer_chat_local_anchor_candidate/chat_cartridge.pt`.
+- Qualitative probe: b384/candidate preserves the chat-cartridge definition and fixed model-testing next-steps prompt well, but still emits stray tokens on greeting and weak general answers on health, gravity, and Python function prompts. Loss improved, but this is not yet a capable general assistant cartridge.
+- Verdict: Anchor-heavy training improved the fixed assistant behavior compared with the broad Alpaca candidate, but the next chatbot step needs a stronger curriculum/objective rather than selecting by `eval_chat` alone.
+
+## 355 — ZeroQ becomes a CMI Hybrid backend seam
+
+- Agent: GitHub Copilot, 2026-05-25.
+- Branch: `feature/zeroq-cmi-backend`.
+- Change: added `hybrid.backends` with `DenseTorchBackend`, `ZeroQPartitionedBackend`, `TrainableSurface`, gradient all-reduce helpers, and backend handles so ZeroQ is an optional substrate under the cartridge ABI rather than a script-local special case.
+- Change: refactored `hybrid/train_4b_distributed.py` to choose `--backend dense|zeroq`, prepare the frozen backbone through the backend layer, mount a real `SuperpositionSteererV3` compiled-prior cartridge surface, feed 21-channel compiled features during training/eval, and save `steerer_state` with the checkpoint.
+- Change: added `hybrid.hf_deepseek` as a tracked explicit-Linear Hugging Face-compatible backbone for ZeroQ and cartridge hook tests.
+- Validation: `.venv/bin/python -m pytest hybrid/tests/test_backends.py hybrid/tests/test_hf_deepseek.py hybrid/tests/test_cartridges.py -q` -> `12 passed`.
+- Validation: `.venv/bin/python -m py_compile hybrid/backends.py hybrid/hf_deepseek.py hybrid/train_4b_distributed.py` -> passed.
+- Validation: `CUDA_VISIBLE_DEVICES=0 .venv/bin/torchrun --nproc_per_node=1 hybrid/train_4b_distributed.py --backend dense --model-config test --epochs 1 --steps 1 --batch 1 --seq-len 16 --lr 1e-4 --steerer-lr 1e-4` -> passed; trainer mounted 2 steerer hooks, trained `50,257` model params plus `4,700` steerer params, and completed eval/save on the test config.
+- Verdict: ZeroQ is now in the fabric as a tested optional backend while CMI cartridges remain backend-agnostic. Relevant backend/cartridge/harness/chat regressions and the dense trainer smoke passed before merge.
+
 ## 354 — pe3 ZeroQ distributed 3B backbone smoke is live under 2 GiB/GPU
 
 - Agent: GitHub Copilot, 2026-05-25.
