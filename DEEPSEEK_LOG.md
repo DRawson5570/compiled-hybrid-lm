@@ -2,6 +2,17 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 343 — Overnight broad assistant adapter run launched
+
+- Agent: GitHub Copilot, 2026-05-24.
+- Host: local dev workspace for data/orchestration; pe2 Tesla M40 GPU 1 for detached overnight training. pe2 GPU 0 is reserved and was left unused.
+- Method: Built a broad response-only chat dataset at `artifacts/chat_steerer_alpaca50k/` using the existing chat seed examples plus `50,000` Alpaca examples. Dataset size: `50,880` examples, `8,903,163` train tokens, `1,609,293` validation tokens, `6,255,262` train assistant-loss tokens, and `1,143,677` validation assistant-loss tokens.
+- Orchestration: Created ignored runtime script `logs/overnight_chat_assistant.sh` on local and pe2. The script trains progressively larger adapter cartridges on pe2 GPU 1, probes each checkpoint with fixed prompts, and copies the lowest `eval_chat` checkpoint to `artifacts/steerer_chat_general_assistant_candidate/chat_cartridge.pt`.
+- Launch: Started pe2 detached runner `overnight_20260524_224244` via `nohup`. Intended active processes after cleanup: runner PID `1068143`, `tee` PID `1068145`, and first training child PID `1068876`. A duplicate earlier runner from a cancelled launch was found and terminated (`1064563`, `1064565`, `1064567`, `1065300`) so only one GPU-1 training workflow remains.
+- Logs/status: pe2 `logs/overnight_chat_assistant.nohup`, `logs/overnight_chat_assistant_overnight_20260524_224244.log`, and `logs/overnight_chat_assistant_status.md`. Repository memory note: `/memories/repo/deepseek_overnight_chat.md`.
+- Initial live signal: first active config `adapter_alpaca50k_b128_long` reached epoch 2 with `eval_chat=58.4`, while base/superposition on the capped validation window were `453.5`/`438.7`. GPU 1 was using about `8.7 GiB` and `100%` utilization; GPU 0 remained at `0 MiB`.
+- Verdict: Overnight work is running durably. Final morning verdict depends on completed checkpoints and probes.
+
 ## 342 — Working adapter chat cartridge and runtime probe
 
 - Agent: GitHub Copilot, 2026-05-24.
