@@ -321,3 +321,13 @@ Prevents semantic crowding — early layers handle grammar, late layers handle d
 - `docs/EXPERIMENT_LOG.md` — pure-compiled progress
 - `docs/ARCHITECTURE.md` — current channel inventory
 - `docs/PRODUCT_PLAN.md` — productization roadmap
+
+---
+
+## WikiText as a Deliberate Stress Test (2026-05-25)
+
+Conventional wisdom says WikiText-103 (119M training tokens) is far too small for a 4.7B parameter model. A pure-SGD model this size would memorize the training set in a few hundred steps and never generalize.
+
+We chose WikiText deliberately for the 4B training run. If the model converges despite the "impossible" data constraint, it proves the compiled priors are providing real statistical signal — not just accelerating convergence on abundant data, but replacing the need for it entirely. A positive result on this dataset is stronger evidence for compiled priors than any result on C4 or The Pile would be.
+
+If it doesn't converge, we switch to C4 — a one-line data path change. Either outcome teaches us something.
