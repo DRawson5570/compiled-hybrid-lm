@@ -203,11 +203,12 @@ class FeatureConditionedAdapterSteerer(nn.Module):
         key = str(layer_idx)
         if key not in self.up:
             return h
-        weights = self._aligned_weights(h)
-        hidden_part = self.down[key](self.norms[key](h))
+        h_float = h.float()
+        weights = self._aligned_weights(h_float)
+        hidden_part = self.down[key](self.norms[key](h_float))
         feature_part = self.feature[key](weights)
         delta = self.up[key](F.gelu(hidden_part + feature_part))
-        return h + self.gammas[key].abs() * delta
+        return h + (self.gammas[key].abs().float() * delta).to(dtype=h.dtype)
 
     def register_hooks(self, model) -> int:
         self.remove_hooks()

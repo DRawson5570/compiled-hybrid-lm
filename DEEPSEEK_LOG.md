@@ -2,6 +2,16 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 351 — Private-fact adapter cartridge: 0/36 -> 30/36, held-out 0/24 -> 18/24
+
+- Agent: GitHub Copilot, 2026-05-25.
+- Host: local RTX 3080, project `.venv`, Qwen/Qwen2.5-1.5B frozen. Added fp16-safe support for `FeatureConditionedAdapterSteerer` by computing adapter deltas in float32 and casting back to the hidden dtype; `hybrid/tests/test_cartridges.py` now covers both superposition and feature-conditioned fp16 paths (`7 passed`).
+- Goal: Get a more real dramatic result than answer formatting by testing private/domain knowledge that the frozen baseline cannot know.
+- Method: Added `self-improvement-research/Life-Harness/private_fact_cartridge_demo.py`. It builds 12 synthetic Aurora private-registry facts (`Project Aster -> RAVEN-041`, etc.), trains only a mounted hidden-conditioned adapter cartridge on three prompt templates per fact, and evaluates on held-out paraphrase templates. Qwen base weights stay frozen; the cartridge is mounted through `CartridgeManifest` + `SteererCartridgeRack`.
+- Artifact: `self-improvement-research/Life-Harness/artifacts/qwen_private_fact_cartridge/private_fact_best.pt`. Summary: `self-improvement-research/Life-Harness/artifacts/qwen_private_fact_cartridge/private_fact_summary.json`.
+- Result: baseline `0/36`; cartridge `30/36`; train eval `0/12 -> 12/12`; held-out paraphrases `0/24 -> 18/24`; regressions `0`. The misses were mostly project-code confusions among learned private codes, not public-knowledge errors.
+- Verdict: This is a stronger result than the strict-format cartridge: the frozen model had no access to the synthetic facts and answered with generic/hallucinated codes, while the mounted adapter cartridge injected prompt-specific private knowledge and generalized to most held-out paraphrases. Next step is to improve separation among similar private codes, likely with more paraphrase templates, harder negatives, and maybe a slightly larger bottleneck.
+
 ## 350 — Dramatic concise-answer cartridge: 0/27 -> 26/27 strict-format pass
 
 - Agent: GitHub Copilot, 2026-05-25.
