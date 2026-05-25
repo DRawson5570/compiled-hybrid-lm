@@ -2,6 +2,14 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 339 — Open-source repo hygiene cleanup
+
+- Agent: GitHub Copilot, 2026-05-24.
+- Host: local dev workspace `/home/drawson/deepseek_experiments`, Python `.venv`.
+- Method: Classified the dirty worktree after the public repo/archive split. Confirmed `hybrid/archive/` contains the moved legacy scripts and should remain excluded from the public repo. Updated `.gitignore` for ignored archive/private/generated surfaces (`hybrid/archive/`, `*.npz`, `*.db`, `wikitext103.txt`, local resume scripts, and accidental root image dumps), removed confirmed accidental untracked PostScript files (`math`, `os`, `sys`, `torch`), and staged the tracked legacy entry-point deletions.
+- Verification: `/home/drawson/deepseek_experiments/.venv/bin/python -m pytest hybrid/tests/` -> 63 passed, 7 warnings.
+- Verdict: Public repo hygiene cleanup is safe to commit. The retained package tests still pass after removing tracked legacy entry points from the open-source surface; archived/private/generated local files remain ignored rather than published.
+
 ## 338 — Dual-cartridge runtime ABI and documentation
 
 - Agent: GitHub Copilot, 2026-05-24.

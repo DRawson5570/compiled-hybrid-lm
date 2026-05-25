@@ -2,7 +2,10 @@
 *.pt
 *.pkl
 *.bin
+*.npz
+*.db
 artifacts/
+wikitext103.txt
 
 # Documentation (private)
 *.md
@@ -34,6 +37,17 @@ dist/
 build/
 
 # Archive
+hybrid/archive/
+
+# Local run helpers
+hybrid/resume_*.sh
+
+# Accidental image conversion outputs
+/math
+/os
+/sys
+/torch
+
 # Embedded git repos
 lib/
 self-improvement-research/
