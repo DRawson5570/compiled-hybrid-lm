@@ -2,6 +2,15 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 347 — Cartridge technology confirmation run: integration works, artifact fails
+
+- Agent: GitHub Copilot, 2026-05-25.
+- Host: local RTX 3080, Python `.venv`; local GPU was free enough for Qwen2.5-1.5B. pe3 was clean before and after.
+- Method: Ran the corrected TauBench direct adapter against the mock domain with the frozen Qwen baseline and then the mounted Qwen cartridge artifact `self-improvement-research/Life-Harness/artifacts/qwen_self_improve/cartridge_best.pt`. This adapter uses TauBench's orchestrator/user simulator/evaluator around our `QwenCartridgeModel`, which mounts `SuperpositionSteererV3` through `CartridgeManifest` + `SteererCartridgeRack`.
+- TauBench result: completed baseline and cartridge simulations for mock task `create_task_1`; both scored `0.0` reward, with no simulation errors. Output summary: `self-improvement-research/Life-Harness/artifacts/qwen_tau_direct_smoke/mock_summary.json`. The cartridge half loaded successfully through the rack (`Cartridge rack mounted: 10 hooks, 32,925 params`, then `Cartridge loaded ...`) but generated punctuation spam rather than valid tool calls.
+- Focused QA result through the same rack-mounted Qwen path: baseline raw QA scored `5/6`; loaded cartridge scored `0/6` and generated `!!!!!!!!!!!!!!!!...` for all six prompts. This directly contradicts the old stochastic/simple evaluation claim that the artifact improved `0.667 -> 1.000`.
+- Verdict: The corrected evaluation confirms the integration uses our cartridge technology, but the current Qwen cartridge artifact does **not** work under the deterministic rack-mounted path. Next step is not more harness plumbing; it is to retrain or constrain the cartridge so it remains stable under greedy/tool-use inference, then rerun the same TauBench adapter.
+
 ## 346 — Corrected Life-Harness validation path for cartridge technology
 
 - Agent: GitHub Copilot, 2026-05-24.
