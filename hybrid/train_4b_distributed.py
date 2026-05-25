@@ -5,9 +5,11 @@ Usage:
            train_4b_distributed.py --backend zeroq --epochs 100 --batch 2
 """
 import argparse, os, sys, socket, time, math, pickle
+from collections import defaultdict
 import torch, torch.distributed as dist
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
+import numpy as np
+from torch.utils.data import Dataset, DataLoader
 
 _here = os.path.dirname(os.path.abspath(__file__))
 _repo = os.path.dirname(_here)
@@ -25,14 +27,127 @@ from hybrid.backends import (
 )
 from hybrid.superposition_steerer_v3 import SuperpositionSteererV3
 from gpu_channels import GPUFeatureComputer
-from train_steerer_v4 import StreamingSteererDatasetV4, FastNgramFeatures, compute_cpu_features, PUNCT_IDS
 
 V = 50257
+PUNCT_IDS = {0, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 25, 26, 27, 28, 29, 30, 31, 58, 60, 61, 90, 91, 92, 93, 198, 220}
 MODEL_CONFIGS = {
     "test": dict(d_model=192, n_layers=2, n_heads=6, d_ff=768, max_len=256),
+    "700m": dict(d_model=1536, n_layers=22, n_heads=16, d_ff=6144, max_len=512),
     "3b": dict(d_model=2688, n_layers=32, n_heads=21, d_ff=10752, max_len=512),
     "4b": dict(d_model=3072, n_layers=40, n_heads=24, d_ff=12288, max_len=512),
 }
+
+
+class StreamingSteererDatasetV4(Dataset):
+    def __init__(self, train_ids, seq_len, vocab_size=None, V=None):
+        self.train_ids = train_ids
+        self.seq_len = seq_len
+        self.N = len(train_ids)
+        self.vocab_size = int(vocab_size if vocab_size is not None else V)
+
+    def __len__(self):
+        return 1000000
+
+    def __getitem__(self, idx):
+        start = torch.randint(0, max(1, self.N - self.seq_len - 1), (1,)).item()
+        x = self.train_ids[start:start + self.seq_len]
+        y = self.train_ids[start + 1:start + self.seq_len + 1]
+        channels = FastNgramFeatures(self.vocab_size)
+        return x, y, compute_cpu_features(x.tolist(), channels)
+
+
+class FastNgramFeatures:
+    def __init__(self, vocab_size):
+        self.vocab_size = vocab_size
+        self._u = -math.log(vocab_size)
+        self.reset()
+
+    def reset(self):
+        self._uni = np.zeros(self.vocab_size, dtype=np.float32)
+        self._uni_total = 0.0
+        self._bi = {}
+        self._bit = {}
+        self._tri = {}
+        self._trit = {}
+        self._skip2 = {}
+        self._skip2t = {}
+        self._skip3 = {}
+        self._skip3t = {}
+        self._seen = defaultdict(list)
+        self._ctx = []
+        self._step = 0
+
+    def update(self, token_id):
+        token_id = int(token_id)
+        self._step += 1
+        self._ctx.append(token_id)
+        self._ctx = self._ctx[-128:]
+        if self._step % 10 == 0:
+            self._uni *= 0.999
+            self._uni_total *= 0.999
+        if token_id < self.vocab_size:
+            self._uni[token_id] += 1.0
+            self._uni_total += 1.0
+        if len(self._ctx) >= 2:
+            prev, cur = self._ctx[-2], self._ctx[-1]
+            self._bi[(prev, cur)] = self._bi.get((prev, cur), 0) + 1
+            self._bit[prev] = self._bit.get(prev, 0) + 1
+        if len(self._ctx) >= 3:
+            prev2, prev1, cur = self._ctx[-3], self._ctx[-2], self._ctx[-1]
+            self._tri[(prev2, prev1, cur)] = self._tri.get((prev2, prev1, cur), 0) + 1
+            self._trit[(prev2, prev1)] = self._trit.get((prev2, prev1), 0) + 1
+        if len(self._ctx) >= 2:
+            self._skip2[(self._ctx[-2], token_id)] = self._skip2.get((self._ctx[-2], token_id), 0) + 1
+            self._skip2t[self._ctx[-2]] = self._skip2t.get(self._ctx[-2], 0) + 1
+        if len(self._ctx) >= 3:
+            self._skip3[(self._ctx[-3], token_id)] = self._skip3.get((self._ctx[-3], token_id), 0) + 1
+            self._skip3t[self._ctx[-3]] = self._skip3t.get(self._ctx[-3], 0) + 1
+        self._seen[token_id].append(self._step)
+
+    def get_features(self, token_id):
+        token_id = int(token_id)
+        ctx = self._ctx
+        uniform = self._u
+        uni_denom = self._uni_total + 0.001 * self.vocab_size
+        uni_log = math.log(max((self._uni[token_id] + 0.001) / uni_denom, 1e-7)) if uni_denom > 0 and token_id < self.vocab_size else uniform
+        bi_log = uniform
+        if len(ctx) >= 1:
+            total = self._bit.get(ctx[-1], 0)
+            denom = total + 0.001 * self.vocab_size
+            bi_log = math.log(max((self._bi.get((ctx[-1], token_id), 0) + 0.001) / denom, 1e-7)) if denom > 0 else uniform
+        tri_log = uniform
+        if len(ctx) >= 2:
+            key = (ctx[-2], ctx[-1])
+            total = self._trit.get(key, 0)
+            denom = total + 0.001 * self.vocab_size
+            tri_log = math.log(max((self._tri.get((ctx[-2], ctx[-1], token_id), 0) + 0.001) / denom, 1e-7)) if denom > 0 else uniform
+        skip2_log = uniform
+        if len(ctx) >= 2:
+            total = self._skip2t.get(ctx[-2], 0)
+            denom = total + 0.001 * self.vocab_size
+            skip2_log = math.log(max((self._skip2.get((ctx[-2], token_id), 0) + 0.001) / denom, 1e-7)) if denom > 0 else uniform
+        skip3_log = uniform
+        if len(ctx) >= 3:
+            total = self._skip3t.get(ctx[-3], 0)
+            denom = total + 0.001 * self.vocab_size
+            skip3_log = math.log(max((self._skip3.get((ctx[-3], token_id), 0) + 0.001) / denom, 1e-7)) if denom > 0 else uniform
+        positions = self._seen.get(token_id, [])
+        gap = 128 if not positions else min(128, self._step - positions[-1])
+        recency_log = math.log(max(1.0 / max(gap, 1), 1e-7))
+        entropy = float(-uni_log / math.log(self.vocab_size)) if uni_log < 0 else 1.0
+        return [float(uni_log), float(bi_log), float(bi_log), float(tri_log), float(tri_log), float(skip2_log), float(skip3_log), float(recency_log), float(entropy)]
+
+
+def compute_cpu_features(tokens, channels):
+    channels.reset()
+    features = []
+    for idx, token_id in enumerate(tokens):
+        if idx > 0:
+            channels.update(tokens[idx - 1])
+        features.append(channels.get_features(int(token_id)))
+    if not features:
+        return torch.zeros(1, 9)
+    return torch.tensor(np.array(features, dtype=np.float32))
 
 
 def _init_dist():

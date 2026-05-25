@@ -201,6 +201,11 @@ The gap between eval_s and eval_b represents the steerer's contribution. A large
 
 A 4.7B-param model in fp16 is ~9.4GB. With optimizer states and activations, this exceeds even a 24GB GPU. ZeroQ solves this via quantization + sharding.
 
+The distributed trainer also exposes a `700m` DeepSeek/CMI configuration for
+single RTX 3080 runs: `d_model=1536`, `n_layers=22`, `n_heads=16`, `d_ff=6144`,
+and GPT-2 BPE vocabulary, yielding `701,192,785` parameters before ZeroQ
+partitioning.
+
 ### Standard Path (Gather/Release)
 
 The original ZeroQ approach installs hooks on every `nn.Linear` layer:
