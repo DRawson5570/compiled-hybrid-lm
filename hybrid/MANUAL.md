@@ -1,8 +1,8 @@
 # Hybrid LLM — Complete Manual
 
-Author: DeepSeek V4 + human (drawson)
-Date: 2026-05-22
-Repo: `github.com/DRawson5570/hybrid-llm` (private)
+Author: Douglas Rawson
+Date: 2026-05-25
+Repo: `github.com/DRawson5570/compiled-hybrid-lm`
 
 ---
 
@@ -13,16 +13,15 @@ Repo: `github.com/DRawson5570/hybrid-llm` (private)
 3. [Hardware Requirements](#3-hardware-requirements)
 4. [Setup](#4-setup)
 5. [Data Pipeline](#5-data-pipeline)
-6. [Compiled Channels (BPE-8000)](#6-compiled-channels-bpe-8000)
-7. [Compiled Channels (GPT-2 BPE)](#7-compiled-channels-gpt-2-bpe)
-8. [Blender Training](#8-blender-training)
-9. [Neural LM Training](#9-neural-lm-training)
-10. [Hybrid Blending](#10-hybrid-blending)
+6. [Compiled Channels (GPT-2 BPE)](#6-compiled-channels-gpt-2-bpe)
+7. [Superposition Steering](#7-superposition-steering)
+8. [ZeroQ Distributed Training](#8-zeroq-distributed-training)
+9. [HF Model Wrapper](#9-hf-model-wrapper)
+10. [Training](#10-training)
 11. [Evaluation](#11-evaluation)
 12. [Generation](#12-generation)
-13. [Surfaces API](#13-surfaces-api)
-14. [Results](#14-results)
-15. [Troubleshooting](#15-troubleshooting)
+13. [Results](#13-results)
+14. [Troubleshooting](#14-troubleshooting)
 
 ---
 
@@ -109,8 +108,8 @@ This project was developed on:
 ### 4.1 Clone and Dependencies
 
 ```bash
-git clone https://github.com/DRawson5570/hybrid-llm.git
-cd deepseek_experiments
+git clone https://github.com/DRawson5570/compiled-hybrid-lm.git
+cd compiled-hybrid-lm
 
 # Python venv
 python3 -m venv .venv && source .venv/bin/activate
@@ -255,92 +254,106 @@ builder.save('artifacts/compiled_builder_50m.pt')
 # Serialized: ~365 MB
 # Provides 21 causal feature channels per position
 ```
-
 ---
 
-## 8. Blender Training
+## 7. Superposition Steering
 
-The WindowMLP blender learns to mix compiled channel log-probs using
-per-position features.
+The SuperpositionSteererV3 (`superposition_steerer_v3.py`) injects 21-channel compiled features as activation offsets at specific transformer layers via forward hooks.
 
-### BPE-8000 (21 channels)
+### Architecture
+
+- **21 channels**: 6 local + 7 mid + 8 global (n-gram, topic, KV, POS, register)
+- **Per-group MLP gatekeepers**: learn to weight channel contributions per layer
+- **RMS-normalized injection**: offsets scaled to match hidden state RMS (fp32-safe)
+- **Layer routing**: 9 hooks on layers [0,1,2,4,5,6,8,9,10] (configurable)
+
+### Co-training
 
 ```bash
-python3 hybrid/v3_super_blender/train.py \
-  --data-dir hybrid/v3_super_blender/data_real_v33 \
-  --epochs 20 --lr 3e-4
-# Output: saved_models/blender_window_mlp.pt
-# Best result: PPL=11.62 (eval)
+cd hybrid
+python3 -u train_steerer_v4.py \
+  --neural-ckpt artifacts/c4_v2_768_x30/best.pt \
+  --resume-model artifacts/c4_v2_768_x30/best.pt \
+  --epochs 200 --steps 500 --batch 8
 ```
 
-### GPT-2 BPE (10 channels)
+### Domain Cartridges
+
+Hot-swappable, linearly composable:
+- **Domain**: WikiText, Python, or custom corpus
+- **Chat**: Conversational via `chat_cartridge.py`
+- **Size**: ~17K–65K parameters, ~70KB on disk
 
 ```bash
-python3 hybrid/train_gpt2_blender.py \
-  --data-dir artifacts/gpt2_channels_v2 \
-  --epochs 50 --lr 1e-3 --device cuda \
-  --out-dir artifacts/gpt2_blender
-# Output: report.json with blender_ppl, blend_results
-```
-
----
-
-## 9. Neural LM Training
-
-### BPE-8000 (d_model=256, PPMI init)
-
-The proven best config. PPMI init requires d_model=256 (matching the pre-built embeddings).
-
-```bash
-python3 hybrid/train_hybrid_bpe8000.py \
-  --epochs 20 --steps-per-epoch 2000 --batch 8 --seq-len 128 \
-  --d-model 256 --n-layers 12 --n-heads 8 --d-ff 1024 \
-  --out-dir artifacts/hybrid_run
-
-# Automatically blends with compiled WindowMLP on completion.
-# Report: report.json with neural_ppl, compiled_ppl, best_blend_ppl, best_alpha
-```
-
-### GPT-2 BPE (d_model=768, random init)
-
-```bash
-python3 hybrid/train_gpt2_neural_lm.py \
-  --epochs 30 --steps-per-epoch 4000 --batch 2 --lr 3e-4 \
-  --d-model 768 --n-layers 12 --n-heads 12 --d-ff 3072 \
-  --out-dir artifacts/gpt2_768
-
-# WikiText-only training. No compiled features during training.
-# Blend evaluation is done separately via train_gpt2_blender.py.
-```
-
-### GPT-2 BPE + C4 (d_model=768, 100 epochs)
-
-```bash
-# Launch in screen for long runs
-screen -dmS c4_train bash -c \
-  "cd ~/deepseek_experiments && python3 -u /tmp/c4_simple.py --epochs 100 --steps 4000 2>&1 | tee /tmp/c4_simple.log"
-
-# Interleaves C4 (85%) + WikiText (15%), saves checkpoints each epoch.
-# Check progress: tail -5 /tmp/c4_simple.log
-# Reattach: screen -r c4_train
+python3 chat_cartridge.py --mode chat \
+  --base-model artifacts/steerer_v4/steerer_best_b.pt \
+  --chat-cartridge artifacts/steerer_chat/chat_cartridge.pt
 ```
 
 ---
 
-## 10. Hybrid Blending
+## 8. ZeroQ Distributed Training
 
-The blend is a per-token convex combination of compiled and neural distributions:
+4-bit quantized ZeRO-3 via `backends.py` and `train_4b_distributed.py`.
 
+### 4-bit Compute Mode
+
+Converts `nn.Linear` → `bnb.nn.Linear4bit` after partition. Fused `matmul_4bit` kernel eliminates per-layer gather/release — 8.3× faster on Maxwell GPUs.
+
+### Launch
+
+```bash
+# 4.7B model, 2 GPUs, steerer enabled:
+torchrun --nproc_per_node=2 --nnodes=1 --node_rank=0 \
+    --master_addr=localhost --master_port=29500 \
+    hybrid/train_4b_distributed.py \
+    --backend zeroq --model-config 4b \
+    --train-surface cmi_steerer --compute-in-4bit \
+    --epochs 100 --steps 50 --batch 6 \
+    --zeroq-path ~/ZeroQ
 ```
-p_blend(y) = α · p_compiled(y) + (1-α) · p_neural(y)
-log p_blend = log(α · exp(lp_compiled) + (1-α) · exp(lp_neural))
+
+### Results
+
+| Model | GPUs | VRAM/GPU | Throughput | GPU Util |
+|-------|------|----------|------------|----------|
+| 4.7B (4-bit compute) | 2× M40 24GB | 5.4 GB | 87.7 tok/s | 95% |
+| 4.7B (gather/release) | 2× M40 24GB | 17.7 GB | 2.86 tok/s | 13% |
+
+### Bitsandbytes Lock
+
+M40 requires bitsandbytes == 0.41.3 + triton == 3.3.1. **Must pin both.** 0.46.1+ dropped Maxwell.
+
+---
+
+## 9. HF Model Wrapper
+
+`hf_deepseek.py` registers DeepSeekForCausalLM with HuggingFace.
+
+| Config | d_model | L | Params |
+|--------|---------|---|--------|
+| test | 192 | 2 | 10M |
+| 3b | 2688 | 32 | 2.9B |
+| 4b | 3072 | 40 | 4.7B |
+
+Explicit `nn.Linear` layers for Q/K/V/O — every weight independently quantizable.
+
+---
+
+## 10. Training
+
+### Compiled Priors
+
+```bash
+python3 build_v3_priors.py  # → artifacts/compiled_priors_v3/
 ```
 
-This is computed at evaluation time for α ∈ {0.0, 0.3, 0.5, 0.7, 0.9, 1.0}.
-The best α is selected by lowest PPL.
+### Resuming
 
-The `train_hybrid_bpe8000.py` script automatically blends at the end of training.
-For GPT-2 BPE, use `train_gpt2_blender.py` which blends with the neural LM checkpoint.
+```bash
+./resume_pe2_4b_zeroq_4bit.sh --epochs 50 --batch 4        # resume
+./resume_pe2_4b_zeroq_4bit.sh --fresh --epochs 100 --batch 6  # fresh
+```
 
 ---
 
@@ -370,111 +383,73 @@ python3 hybrid/capability_pipeline.py benchmark \
 ## 12. Generation
 
 ```bash
-# Single prompt
-python3 hybrid/generate_hybrid.py \
-  --prompt "Explain quantum computing" --max-new 200 --temperature 0.7
+# Production chat (with steerer cartridge):
+python3 chat_cartridge.py --mode chat \
+  --base-model artifacts/steerer_v4/steerer_best_b.pt \
+  --chat-cartridge artifacts/steerer_chat/chat_cartridge.pt
 
-# Interactive chat
-python3 hybrid/generate_hybrid.py --chat
+# Raw generation (no cartridge):
+python3 chat_gpt2.py
 ```
 
-Features:
-- Temperature scaling
-- Top-p (nucleus) sampling
-- Repetition penalty
-- Stop tokens (EOS, `<|im_end|>`)
-- Multi-turn chat with history
-
-Note: Coherent generation requires neural PPL < 50. At PPL=71, output is partially coherent but sometimes nonsensical.
+Features: temperature, top-p, top-k, repetition penalty, stop markers, n-gram repetition detection, multi-turn conversation history.
 
 ---
 
-## 13. Surfaces API
+## 13. Results
 
-The hybrid nature of the model enables component injection/retraction without retraining.
+### V4 Co-trained Steerer (124M params, GPT-2 BPE)
 
-```python
-from hybrid.surfaces import inject_logit_bias, retract, compose, ComponentRegistry
+| Metric | Value |
+|--------|-------|
+| eval_b (standalone) | 35.6 |
+| eval_s (steered) | 28.2 |
+| Training time | 4.5 hours on RTX 3080 |
+| Training tokens | 154M (3,400× fewer than GPT-2) |
 
-# Inject a logit bias
-registry = ComponentRegistry()
-wrapped, cid = inject_logit_bias(model, bias_tensor, registry=registry)
+### ZeroQ 4-bit (4.7B params, in progress)
 
-# Retract (exact restore, verified by checksum)
-unwrapped, verified = retract(wrapped, cid, registry)
-assert verified  # checksum matches pre-install state
+| Metric | Epoch 1 | Epoch 23 |
+|--------|---------|----------|
+| eval_s | 44,081 | 6,027 |
+| Throughput | 87.7 tok/s at batch=6 |
+| GPU util | 95% on 2× M40 |
+| VRAM | 5.4 GB per GPU |
 
-# Compose multiple components
-wrapped, ids = compose(model, [
-    {'type': 'logit_bias', 'bias': bias_a},
-    {'type': 'logit_bias', 'bias': bias_b},
-], registry)
+### Domain Cartridge (frozen C4 base)
 
-# Provenance tracking
-from hybrid.surfaces.provenance import ProvenanceRing, ProvenanceBlender
-```
-
-Tests: `tests/test_hybrid_surfaces.py` (5 tests, all passing)
-Provenance: `tests/test_provenance.py` (200-token decode verified, logsumexp invariant holds)
-
----
-
-## 14. Results
-
-### BPE-8000 (custom tokenizer, V=8000)
-
-| Model | Params | Neural PPL | Compiled PPL | Blend PPL |
-|---|---|---|---|---|
-| 12L, d=256, 20ep | 11.6M | 71.55 | 11.62 | **9.21** |
-| 12L, d=256, 50ep | 11.6M | 81.2 | 11.62 | 9.28 |
-| 24L, d=256, 20ep | 21.0M | 96.2 | 11.62 | 9.62 |
-| 12L, d=512, 20ep | 42.0M | 85.9 | 11.62 | 9.38 |
-| 12L, d=768, 20ep | 91.3M | 136.9 | 11.62 | 10.11 |
-
-**Key finding**: PPMI init at d_model=256 is critical. Bigger models without it underperform.
-
-### GPT-2 BPE (standard tokenizer, V=50257)
-
-| Model | Params | Neural PPL | Compiled PPL | Blend PPL |
-|---|---|---|---|---|
-| 12L, d=768, 30ep WikiText | 124M | 105.46 | 58.23 | **23.33** |
-| GPT-2 Small (baseline) | 124M | — | — | 29.0 |
-
-**Key finding**: Hybrid beats GPT-2 Small with 120M tokens vs billions.
+| Cartridge | eval_s |
+|-----------|--------|
+| WikiText | 28.3 |
+| Published | huggingface.co/draw5570/compiled-hybrid-lm |
 
 ---
 
-## 15. Troubleshooting
+## 14. Troubleshooting
 
-### "C4 training crashes before epoch 1"
+### "CUDA out of memory"
 
-Use `text[:2000]` to truncate before `tokenizer.encode()`. The tokenizer hangs on 11K-token documents.
+Reduce batch/seq: `--batch 1 --seq-len 32`. Or use `--backend zeroq --compute-in-4bit` for 4-bit mode.
 
-### "Process dies in background"
+### "bitsandbytes import fails"
 
-Use `screen` instead of `nohup`:
+Must pin: `bitsandbytes==0.41.3` and `triton==3.3.1`. Maxwell (M40) is the only supported architecture for 4-bit compute.
+
+### "ZeroQ partition_from_full_precision not found"
+
+Update `~/ZeroQ/src/coordinator.py` from the latest `github.com/DRawson5570/ZeroQ`.
+
+### "Module not found"
+
 ```bash
-screen -dmS myrun bash -c "python3 -u script.py 2>&1 | tee /tmp/out.log"
-screen -r myrun  # reattach
-# Ctrl+A, D to detach
+pip install -r requirements.txt
+# Ensure repo root is on PYTHONPATH or run from repo directory
 ```
 
-### "GPU out of memory"
+### "Training stalls at data loading"
 
-Reduce batch size: `--batch 1`. The 124M model needs ~3GB at batch=2.
-
-### "Identical results across runs"
-
-The default torch seed is 42. For different trajectories, change `torch.manual_seed()`.
-
-### "Module not found: compile_wiki_lm_v13"
-
-Add `~/llm_decoupling` to `sys.path`. The main repo must be accessible.
-
-### "Shape channel gives PPL=1.44"
-
-The shape channel (token capitalization/punctuation patterns) is overwhelmingly predictive in English text. Exclude it for meaningful compiled channel blending.
+Verify artifacts exist: `ls artifacts/wikitext_gpt2/train_ids.pt`. If missing, run `build_v3_priors.py` and tokenize WikiText first.
 
 ---
 
-*Manual last updated: 2026-05-22*
+*Manual last updated: 2026-05-25*
