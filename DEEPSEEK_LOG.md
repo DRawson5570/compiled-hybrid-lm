@@ -5,11 +5,14 @@ Keep this file current. Record the command, host, upstream SHA, model artifact, 
 ## 353 — Broad chatbot continuation: anchor-heavy dataset controls
 
 - Agent: GitHub Copilot, 2026-05-25.
-- Host: local dev workstation for code/test. pe2 launch follows this scaffolding entry.
+- Host: local dev workstation for code/test; pe2 Tesla M40 GPU 1 for detached training. pe2 GPU 0 left unused.
 - Goal: Continue the general chatbot cartridge lane. The previous pe2 broad Alpaca run reached low `eval_chat` (`30.7357` best at `adapter_alpaca50k_b384_long`) but qualitative probes drifted into code fragments, generic advice, and wrong physics, so loss alone was not selecting a capable assistant.
 - Method: Updated `hybrid/build_chat_dataset.py` with `--anchor-repeat`, `--focused-repeat`, and `--shuffle-seed`. This lets the next broad dataset keep high-density greeting/chat-cartridge/testing anchors while still mixing Alpaca examples, and prevents validation from being only the tail of the Alpaca dataset.
 - Validation: `.venv/bin/python -m pytest hybrid/tests/test_build_chat_dataset.py hybrid/tests/test_cartridge_harness.py hybrid/tests/test_cartridges.py` -> `13 passed`; `.venv/bin/python -m py_compile hybrid/build_chat_dataset.py hybrid/train_steerer_chat.py hybrid/chat_cartridge.py` -> passed.
-- Next: sync the updated builder/test to pe2 and launch a detached GPU-1 anchor-heavy broad assistant cartridge run.
+- Launch: Synced `hybrid/build_chat_dataset.py`, `hybrid/tests/test_build_chat_dataset.py`, `CHANGELOG.md`, and `DEEPSEEK_LOG.md` to pe2, then launched ignored runner `logs/anchor_chat_assistant.sh` with `RUN_ID=anchor_20260525_055056`, remote launcher PID `1768058`, runner PID `1768061`, tee PID `1768063`, and first training child PID `1770276`.
+- Dataset: `artifacts/chat_steerer_anchor_alpaca12k` built on pe2 with `--rounds 240 --alpaca-count 12000 --anchor-repeat 300 --focused-repeat 300 --shuffle-seed 20260525 --val-fraction 0.12`, yielding `15,148` examples, `2,346,070` train tokens, `329,426` validation tokens, `1,554,453` train assistant-loss tokens, and `220,772` validation assistant-loss tokens.
+- Active run: first config `adapter_anchor12k_b256` (`bottleneck=256`, `epochs=100`, `steps=260`, `batch=4`, `seq_len=128`, `lr=5e-4`, `max_eval_tokens=30000`) is running on pe2 GPU 1 at about `4.4 GiB` VRAM and `93-94%` utilization. Planned follow-ups in the runner: `adapter_anchor12k_b384`, `adapter_anchor12k_b512`, then select `artifacts/steerer_chat_general_assistant_anchor_candidate/chat_cartridge.pt`.
+- Logs/status: pe2 `logs/anchor_chat_assistant.nohup`, `logs/anchor_chat_assistant_anchor_20260525_055056.log`, and `logs/anchor_chat_assistant_status.md`.
 
 ## 352 — Owned cartridge self-improvement harness added
 
