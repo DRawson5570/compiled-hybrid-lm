@@ -30,6 +30,18 @@ class DummyTransformer(nn.Module):
         return x
 
 
+class DummyHFTransformer(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.transformer = nn.Module()
+        self.transformer.h = nn.ModuleList([AddOneLayer()])
+
+    def forward(self, x):
+        for layer in self.transformer.h:
+            x = layer(x)
+        return x
+
+
 class TupleLayer(nn.Module):
     def forward(self, x):
         return x, 'cache'
@@ -92,6 +104,17 @@ def test_rack_composes_independent_steerer_and_capability_cartridge():
 
     rack.remove_hooks()
     assert torch.allclose(model(x), x)
+
+
+def test_rack_registers_huggingface_gpt2_style_layers():
+    model = DummyHFTransformer()
+    rack = SteererCartridgeRack()
+    rack.mount(manifest('chat', CartridgeRole.TASK_CAPABILITY), FakeSteerer(2.0))
+
+    assert rack.register_hooks(model) == 1
+    x = torch.zeros(1, 3, 5)
+
+    assert torch.allclose(model(x), torch.full_like(x, 2.0))
 
 
 def test_rack_rejects_incompatible_cartridge():

@@ -48,6 +48,15 @@ class TrainableSurface:
         return cls(cleaned)
 
     @classmethod
+    def frozen(cls) -> 'TrainableSurface':
+        """Freeze every backbone parameter.
+
+        Cartridge-only trainers optimize parameters outside the backbone, so the
+        backend still needs a first-class way to partition a fully frozen model.
+        """
+        return cls(())
+
+    @classmethod
     def head_bias(cls) -> 'TrainableSurface':
         return cls(('head_bias',))
 

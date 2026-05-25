@@ -39,6 +39,15 @@ def test_trainable_surface_freezes_everything_except_named_params():
     assert not model.ln_f.weight.requires_grad
 
 
+def test_frozen_trainable_surface_freezes_every_backbone_param():
+    model = TinyBackbone()
+
+    names = set_trainable_surface(model, TrainableSurface.frozen())
+
+    assert names == ()
+    assert all(not param.requires_grad for param in model.parameters())
+
+
 def test_head_bias_and_embeddings_surface_keeps_tied_output_weights_live():
     model = TinyBackbone()
     model.tok_emb = nn.Embedding(8, 3)
@@ -141,6 +150,57 @@ def test_zeroq_backend_streams_only_frozen_params_and_leaves_surface_trainable(m
     assert all(param.status == FakeStatus.PARTITIONED for param in handle.coordinator._params.values())
     assert all(param.partitioned_from_device == 'cpu' for param in handle.coordinator._params.values())
     assert handle.memory_stats() == {'num_params': 6.0}
+
+
+def test_zeroq_backend_accepts_fully_frozen_backbone(monkeypatch):
+    class FakeStatus:
+        NOT_AVAILABLE = 'not_available'
+        PARTITIONED = 'partitioned'
+
+    class FakeConfig:
+        pass
+
+    class FakeZeroQParam:
+        def __init__(self, name, param):
+            self.name = name
+            self.param = param
+            self.status = FakeStatus.NOT_AVAILABLE
+
+        def partition_from_full_precision(self, weight):
+            self.status = FakeStatus.PARTITIONED
+
+    class FakeCoordinator:
+        def __init__(self, config):
+            self.config = config
+            self._params = {}
+
+    class FakeWrapper:
+        def __init__(self, model, coordinator, trainable_only=False):
+            for name, param in model.named_parameters():
+                if not param.requires_grad:
+                    coordinator._params[name] = FakeZeroQParam(name, param)
+
+        def partition(self):
+            raise AssertionError('streaming partition should be used')
+
+    src_mod = types.ModuleType('src')
+    config_mod = types.ModuleType('src.config')
+    config_mod.MAXWELL_CONFIG = FakeConfig()
+    coordinator_mod = types.ModuleType('src.coordinator')
+    coordinator_mod.ZeroQCoordinator = FakeCoordinator
+    coordinator_mod.ZeroQModuleWrapper = FakeWrapper
+    coordinator_mod.ZeroQParamStatus = FakeStatus
+
+    monkeypatch.setitem(sys.modules, 'src', src_mod)
+    monkeypatch.setitem(sys.modules, 'src.config', config_mod)
+    monkeypatch.setitem(sys.modules, 'src.coordinator', coordinator_mod)
+
+    model = TinyBackbone()
+    handle = ZeroQPartitionedBackend(device='cpu').prepare(model, TrainableSurface.frozen())
+
+    assert handle.trainable_parameter_names == ()
+    assert all(not param.requires_grad for param in model.parameters())
+    assert 'head_bias' in handle.coordinator._params
 
 
 def test_zeroq_compute_in_4bit_replaces_partitioned_linear_modules(monkeypatch):

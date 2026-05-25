@@ -10,6 +10,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+def _transformer_layers(model):
+    if hasattr(model, 'encoder') and hasattr(model.encoder, 'layers'):
+        return model.encoder.layers
+    if hasattr(model, 'layers'):
+        return model.layers
+    if hasattr(model, 'transformer') and hasattr(model.transformer, 'h'):
+        return model.transformer.h
+    if hasattr(model, 'h'):
+        return model.h
+    raise AttributeError('model does not expose encoder.layers, layers, transformer.h, or h')
+
+
 class SuperpositionSteererV3(nn.Module):
     """Upgraded 21-Channel MLP Steerer with Multi-Timescale Layer Routing.
 
@@ -112,7 +124,7 @@ class SuperpositionSteererV3(nn.Module):
 
     def register_hooks(self, model) -> int:
         self.remove_hooks()
-        layers = model.encoder.layers if hasattr(model, 'encoder') else model.layers
+        layers = _transformer_layers(model)
 
         def make_hook(l_idx):
             def hook_fn(module, input, output):
@@ -212,7 +224,7 @@ class FeatureConditionedAdapterSteerer(nn.Module):
 
     def register_hooks(self, model) -> int:
         self.remove_hooks()
-        layers = model.encoder.layers if hasattr(model, 'encoder') else model.layers
+        layers = _transformer_layers(model)
 
         def make_hook(l_idx):
             def hook_fn(module, input, output):

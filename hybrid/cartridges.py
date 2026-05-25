@@ -126,7 +126,7 @@ class SteererCartridgeRack:
     def register_hooks(self, model: nn.Module) -> int:
         """Register additive composition hooks on the model's transformer layers."""
         self.remove_hooks()
-        layers = model.encoder.layers if hasattr(model, 'encoder') else model.layers
+        layers = _transformer_layers(model)
         target_layers = sorted({
             layer
             for mounted in self._mounted.values()
@@ -154,3 +154,15 @@ class SteererCartridgeRack:
             if layer_idx < len(layers):
                 self._hooks.append(layers[layer_idx].register_forward_hook(make_hook(layer_idx)))
         return len(self._hooks)
+
+
+def _transformer_layers(model: nn.Module):
+    if hasattr(model, 'encoder') and hasattr(model.encoder, 'layers'):
+        return model.encoder.layers
+    if hasattr(model, 'layers'):
+        return model.layers
+    if hasattr(model, 'transformer') and hasattr(model.transformer, 'h'):
+        return model.transformer.h
+    if hasattr(model, 'h'):
+        return model.h
+    raise AttributeError('model does not expose encoder.layers, layers, transformer.h, or h')
