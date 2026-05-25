@@ -34,6 +34,27 @@ epoch=100  loss=3.58  ppl=35.9  eval_s=30.4  eval_b=42.1  [bs]
 
 Baseline C4 model: 152 PPL. With WikiText cartridge: 35 PPL steered, 41 PPL standalone.
 
+### Website Benchmark Demo
+
+Generate a side-by-side JSON payload for the website from an evaluated cartridge
+checkpoint:
+
+```bash
+python hybrid/export_benchmark_demo.py \
+    --checkpoint artifacts/steerer_v4/steerer_best_s.pt \
+    --out artifacts/web_demo_compiled_hybrid_benchmark.json
+```
+
+Current demo payload, measured on WikiText-103 validation with GPT-2 BPE:
+
+| Mode | PPL | Active cartridge |
+|---|---:|---|
+| Compiled Hybrid Baseline | 37.2111 | none |
+| Cartridge Injection Active | 28.2080 | superposition-steerer-v3 |
+
+That is a 9.0031 PPL absolute gain, or 24.19% relative perplexity reduction,
+from enabling the cartridge on the same checkpoint.
+
 ### Generation Samples (eval_s=35)
 
 ```

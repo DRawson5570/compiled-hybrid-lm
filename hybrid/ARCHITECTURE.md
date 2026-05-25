@@ -295,6 +295,16 @@ known misses are still story length, creator-name anchoring, and one contextual
 France prompt, so it is a strong side-by-side demo candidate rather than the end
 state for the 4B assistant lane.
 
+### Website Benchmark Export
+
+`hybrid/export_benchmark_demo.py` exports a website-ready JSON payload for the
+popular benchmark comparison: compiled-hybrid baseline with cartridge injection
+disabled versus the same checkpoint with `SuperpositionSteererV3` enabled. The
+default source is `artifacts/steerer_v4/steerer_best_s.pt`, which records
+WikiText-103 validation `eval_b=37.2111` and `eval_s=28.2080`. The exporter
+fails by default if the cartridge does not improve baseline perplexity, so stale
+or bad checkpoints do not quietly become demo copy.
+
 ### CartridgeManifest
 
 Each cartridge carries metadata for compatibility checking:
