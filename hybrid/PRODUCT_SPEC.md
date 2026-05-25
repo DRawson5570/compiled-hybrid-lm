@@ -1,108 +1,94 @@
-THIS DOCUMENT IS DEPRECATED.
-THE NEW PRODUCT SPECS ARE IN HYBRID_STRATEGY AND FRONTIER_SPEC
-
 # PRODUCT SPECIFICATION: COMPILED MODULAR INTELLIGENCE (CMI)
-### Blazing Fast, Training-Free Language Modeling on Consumer Hardware
+### Activation Superposition Steering — 2026-05-24
 
----
+## Architecture
 
-## 1. Vision & Strategy
-
-Our goal is to build an alternative to the standard, computationally expensive SGD-pretrained Transformer paradigm. We are developing a **Compiled Modular Intelligence (CMI)** architecture: a fully causal, non-parametric language model that operates at blistering speeds, scales linearly, compiles in minutes, and is trainable on simple consumer hardware (e.g., a single RTX 3080 or even a CPU).
-
-Instead of embedding millions of concepts into dense, monolithic weight matrices through gradient-descent pretraining, we:
-1. **Factor language into orthogonal, specialized structure channels (Compiled Experts)**.
-2. **Compile counts, probabilities, and geometric coordinates deterministically** directly from raw corpora statistics (SGD-free).
-3. **Employ ultra-lightweight, sequence-aware routing blenders** to organically dynamic-weight the specialty outputs based on lookback history.
-
-With this approach, we aim to match the relative perplexities of modern parameterized baselines (such as GPT-2 Small, $< 29.0$ PPL) while maintaining zero-computation inference pipelines.
-
----
-
-## 2. Core Operational Pillars (The 4 Expert Channels)
-
-To deliver a frontier-competent agentic assistant, the core compiled architecture must be factored into four independent, highly specialized, SGD-free capability channels:
+A frozen 124M GPT-2 BPE base model (C4-trained) + independently hot-swappable superposition steering cartridges and domain capability cartridges injected into the transformer residual stream. The base model owns broad language competence; cartridges own compiled-prior control, domain specialization, and task capability.
 
 ```
-                  ┌──────────────────────────────────────────────┐
-                  │            Streaming Token Stream            │
-                  └──────────────┬────────┬────────┬─────────────┘
-                                 │        │        │
-      ┌──────────────────────────┴─┐      │        │      ┌────────────────────────────┐
-      │   PPMI + SVD Space Emb     │      │        │      │ Decycled Temporal Counts   │
-      └──────────────┬─────────────┘      │        │      └─────────────┬──────────────┘
-                     │                    │        │                    │
-                     ▼                    ▼        ▼                    ▼
-        ┌────────────────────────┐  ┌──────────┐ ┌──────────┐  ┌───────────────────────┐
-        │    InstructChannel     │  │ Reasoner │ │  Coder   │  │      ToolChannel      │
-        │ Semantic proximity /   │  │ Multi-hop│ │ Syntax & │  │ Deterministic compute │
-        │ Translation / Concepts │  │ induction│ │ Keywords │  │   & output injection  │
-        └────────────┬───────────┘  └────┬─────┘ └────┬─────┘  └────────────┬──────────┘
-                     │                   │            │                     │
-                     ▼                   ▼            ▼                     ▼
-                  ┌─────────────────────────────────────────────────────────┐
-                  │                 Sequence-Aware Blender                  │
-                  │   (Lookback MLP / GRU / Dilated Causal Convolution)    │
-                  └─────────────────────────┬───────────────────────────────┘
-                                            ▼
-                           Blended Output Probability distribution
+Compiled Channels (15-channel streaming statistics)
+    → Per-token features (bigram, trigram, recency, PPMI, entropy, etc.)
+    → MLP Gatekeeper (non-linear channel interaction)
+    → Activation Steering Offset (B×T×768)
+    → Transformer Residual Stream
+    → Specialized Output
 ```
 
-### Pillar I: Instruction Following (`InstructChannel`)
-*   **Role**: Handles complex, long-range semantic conceptual mappings, translations, and following conceptual guidelines.
-*   **Mechanism**: Uses continuous tabular SVD space embeddings ($V=8000, d=256$) generated from a continuous Pointwise Mutual Information (PPMI) representation of the training text. It evaluates context using positional-augmented cosine similarities and performs local k-means routing ($K_{clusters}=65536$) over causal, contrastive context windows ($r_{aug} = [r_{pos}, ctx_{t} - emb_{t}]$) to find context-dependent semantic completions.
+## Cartridge Stack
 
-### Pillar II: Multi-Step Reasoning (`ReasonerChannel`)
-*   **Role**: Triggers transitively-linked reasoning chains, multi-hop lookups, and factual deduction.
-*   **Mechanism**: Implements causal multi-hop trigram and n-hop induction heads. When a pattern $A \to B \to C$ is observed in local temporal sequence caches, the channel computes the semantic and count-based probability vectors to complete the transitively closed query.
+The runtime supports **multiple simultaneous cartridge slots**. A general superposition steerer can be loaded beside one or more domain/capability cartridges, then blended through weighted additive residual offsets:
 
-### Pillar III: Code Generation (`CoderChannel`)
-*   **Role**: Predicts rigorous syntax structures, structural delimiters, keyword boundaries, and standard import boilerplate (e.g., python, numpy, imports, function declarations).
-*   **Mechanism**: Tracks and maintains Compiled Symbol Signatures (syntactic bigram and trigram frequency counters specifically weighted to detect and model rare structural keyword boundaries) combined with local indent-level context variables.
+```
+active_offset(layer, token)
+    = alpha * superposition_steerer_offset
+    + beta  * domain_capability_offset
+    + gamma * task_capability_offset
+```
 
-### Pillar IV: Tool Use (`ToolChannel`)
-*   **Role**: Detects tool-framing syntaxes, computes deterministic steps (such as math executions or databases lookups), and injects the actual computed outputs directly back into prediction distributions.
-*   **Mechanism**: Detects predefined tool-invocation markers (such as trigger parameters and arguments). The channel performs real-time deterministic computation on the backend and projects the output tokens with high confidences, bypassing typical LLM hallucination and arithmetic failure modes.
+Compatibility is explicit in the cartridge manifest: base model, tokenizer, channel schema, injection layers, and composition space must match before cartridges can be mounted together.
 
----
+## Cartridge Types
 
-## 3. Sequence-Aware Routing Blenders
+| Type | Params | Example |
+|---|---|---|
+| **Superposition Steerer** | 17K-76K | General 21-channel activation controller, V4 steerer |
+| **Domain Capability** | 17K-76K | Wikipedia (encyclopedic), GitHub/Python (code), PubMed (medical), Legal |
+| **Task Capability** | 17K-76K | Reasoning, factual accuracy, instruction following, brevity |
+| **Concept Injection** | variable | Triggered fact/API/pattern injection via surface wrappers |
 
-The outputs of our various core channels are dynamically merged through a **Sequence-Aware Blender**:
+## Production Model
 
-$$\log P_{blend}(y \mid context_{1:t}) = \text{Blender}(context_{1:t}) \cdot \begin{pmatrix} \log P_{instruct} \\ \log P_{reason} \\ \log P_{coder} \\ \log P_{tool} \\ \log P_{ngram} \end{pmatrix}$$
+**Frozen base model. Train only the cartridge.**
 
-We implement and support four highly advanced, sequence-aware routing architectures in `hybrid/v3_super_blender/`:
+- Ship ONE 124M base model (~500MB)
+- Train MANY cartridges (17K-76K each, ~70-300KB on disk)
+- Swap steerers, domains, and capabilities at inference with zero latency
+- Stack cartridges via linear composition: `offset = α·steerer + β·domain_A + γ·capability_B`
 
-1.  **WindowMLPBlender**
-    *   Fast tabular routing over a lookback window $W$.
-    *   Constructs feature matrices of shape $(T, W \times F_{dim})$. Extremely lightweight and robust to state drift.
-2.  **LookbackMLPBlender**
-    *   A deep residual MLP (ResNet blocks with LayerNorm and GELU) processing lookback-windowed feature representations.
-3.  **GRUBlender**
-    *   A unidirectional sequence recurrent neural network (GRU) that causally processes raw token streams. 
-    *   Utilizes chunk-by-chunk sequence forwarding and state caching to preserve context history without memory explosions.
-4.  **CausalConvBlender**
-    *   A 1D Causal Convolutional Network leveraging dilated convolutions with left-padded causal masks. Fully parallelizable during training and highly descriptive of sequence history.
+No model retraining. No hyperparameter sweeps. No weight merging.
 
----
+## Runtime ABI
 
-## 4. Compilation & Training Guidelines (No Hacks Policy)
+The cartridge ABI is intentionally small:
 
-1.  **Strict Causality**: All context vector offsets and temporal calculations must remain strictly causal:
-    $$\text{Window\_Offsets} \subset (-\infty, 0]$$
-    Future target leakages (bidirectional context windows) are strictly forbidden to maintain scientific integrity.
-2.  **Zero-Hack Calibration**: The sequence routing blenders must be calibrated and optimized using honest SGD training paths over pure validation splits. Code must never inspect parent stack frames or leak future target information under any evaluation mode.
-3.  **Consumer Hardware Accessibility**: 
-    *   Training time for the compiled database of global statistical properties and k-means clustering can be fully constructed in minutes.
-    *   Inference-time blenders must rely on lightweight parameters (e.g., $< 1\text{M}$ active params), enabling CPU/laptop-level inference speeds exceeding $100$ tokens/second.
+```python
+CartridgeManifest(
+    cartridge_id='wiki-v4',
+    role='domain_capability',
+    base_model_id='c4-124m',
+    tokenizer_id='gpt2-bpe',
+    channel_schema='cmi-21ch-v3',
+    inject_layers=(0,1,2,4,5,6,8,9,10),
+    composition_space='residual_stream:additive:v1',
+)
+```
 
----
+The runtime mounts compatible cartridges into a `SteererCartridgeRack`, sets live compiled channel features once per generation step, and sums active residual deltas. This preserves the ability to load a standalone superposition steerer beside domain capability cartridges rather than baking the steerer into a single domain package.
 
-### Phase Targets
+## Performance (Current)
 
-| Phase | Milestone | Target Metric (100K WikiText-103) | Focus |
-|---|---|---|---|
-| **Phase I** | Baseline Restoration | Host honest $33.0$ PPL routing | Clean implementation |
-| **Phase II** | Channel Fusion | Modular integration of 4 Expert Channels | Fusion testing |
-| **Phase III** | Leaderboard Breach | Break the GPT-2 boundary ($< 29.0$ PPL) | Fine-tuning & Scaling |
+- V1 (output blending): 20.22 PPL — proven baseline
+- V2 (activation superposition, 9ch): 34 PPL steered, model absorption 152→50 PPL
+- V3 (14ch + MLP gatekeeper): training in progress, targeting <30 PPL
+- 340M base model: training in progress (pe2, ~3.3 days)
+
+## Key Properties
+
+- **Hot-swappable**: pointer change, no CUDA reload
+- **Linear composable**: blend with sliders at runtime
+- **Auditable**: explicit channel weights, traceable per-token attribution
+- **Edge deployable**: 50 cartridges = 15MB cache, one base model in VRAM
+
+## V3 Channels (in development)
+
+Three new compiled channel families added to the 15-channel inventory:
+
+| Channel | Type | Signal |
+|---|---|---|
+| punct_density | Register | Punctuation/word ratio — codes >70%, prose ~15% |
+| repetition_score | Register | Adjacent token repeats — lists/code >20%, prose <5% |
+| unique_token_ratio | Register | Vocabulary diversity — code narrow, prose wide |
+| POS bigram (planned) | Syntax | Noun→verb, adj→noun transition probabilities |
+| kNN retrieval (planned) | Cache | What was said next in similar contexts |
+
+Register channels let the steerer adapt injection pattern based on text structure — stronger n-gram injection for code, weaker for prose.

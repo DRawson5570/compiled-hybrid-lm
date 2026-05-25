@@ -2,6 +2,16 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 338 — Dual-cartridge runtime ABI and documentation
+
+- Agent: GitHub Copilot, 2026-05-24.
+- Host: local dev workspace `/home/drawson/deepseek_experiments`, Python `.venv`.
+- Method: Added `hybrid/cartridges.py` with `CartridgeManifest`, `CartridgeRole`, and `SteererCartridgeRack`. The rack mounts multiple compatible steerers, registers one residual-stream hook set, and sums weighted deltas so a general superposition steerer can run beside domain/task capability cartridges without merging into the frozen base model. Updated product, strategy, infrastructure, README, and changelog docs to describe the dual-cartridge ABI and compatibility contract.
+- Verification:
+  - `/home/drawson/deepseek_experiments/.venv/bin/python -m pytest hybrid/tests/test_cartridges.py hybrid/tests/test_hybrid_surfaces.py` -> 9 passed.
+  - `/home/drawson/deepseek_experiments/.venv/bin/python -m pytest hybrid/tests/` -> 63 passed, 7 warnings.
+- Verdict: The repo now has an explicit, tested architecture for side-by-side hot-swappable superposition steerer cartridges and domain/task capability cartridges. This is code/API scaffolding plus documentation, not a model-quality experiment.
+
 ## 337 — Remote M40 compiled-feature engineering blocker probes
 
 - Agent: GitHub Copilot, 2026-05-22.

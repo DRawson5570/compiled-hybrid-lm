@@ -9,7 +9,7 @@
 1. **A Compiled Prior:** A stateful statistical engine that tracks n-gram frequencies, decay caches, POS transitions, topic vectors, and PPMI semantics in real-time.
 2. **A Lightweight Neural Network:** A standard Transformer that learns only the residual — focusing its parameters on high-entropy reasoning and long-range composition.
 
-At runtime, these merge via **Superposition Gated Steering**. The compiled prior's channel statistics are injected directly into the residual stream as activation offsets through tiny, hot-swappable **Steering Cartridges** (17K parameters, ~70KB on disk).
+At runtime, these merge via **Superposition Gated Steering**. The compiled prior's channel statistics are injected directly into the residual stream as activation offsets through tiny, hot-swappable **Steering Cartridges** (17K parameters, ~70KB on disk). A general superposition steerer can be loaded beside separate domain/capability cartridges and blended additively at inference.
 
 ## Key Features
 
@@ -88,8 +88,9 @@ Compiled Channels (21 streaming statistics)
 
 | Type | Size | Example |
 |---|---|---|
-| Domain | 17K params, ~70KB | Wikipedia, Python, Medical, Legal |
-| Capability | 17K params, ~70KB | Reasoning, factual, instruction-following |
+| Superposition Steerer | 17K params, ~70KB | General 21-channel activation controller |
+| Domain Capability | 17K params, ~70KB | Wikipedia, Python, Medical, Legal |
+| Task Capability | 17K params, ~70KB | Reasoning, factual, instruction-following |
 
 ### Key Properties
 
@@ -106,6 +107,7 @@ hybrid/                        # Core library
     config.py                  # Path configuration
     superposition_steerer.py   # V1: linear steerer (9 channels)
     superposition_steerer_v3.py # V3: 21ch per-group MLP steerer
+    cartridges.py              # Cartridge manifests + composition rack
     dynamic_gating.py          # Self-attenuating per-layer injection
     concept_injection.py       # Vocab-space projection steering
     channels_v3.py             # 21-channel features (Witten-Bell, topic, KV, POS)
@@ -151,11 +153,17 @@ python hybrid/chat_gpt2.py
 
 ### Cartridge Swapping
 ```python
-wiki = load_cartridge('wiki.cartridge')
-code = load_cartridge('code.cartridge')
+from hybrid.cartridges import CartridgeManifest, CartridgeRole, SteererCartridgeRack
 
-# Blend: 70% Wiki, 30% Code
-offset = 0.7 * wiki.compute_offset() + 0.3 * code.compute_offset()
+rack = SteererCartridgeRack()
+rack.mount(CartridgeManifest('v4-steerer', CartridgeRole.SUPERPOSITION_STEERER,
+                             base_model_id='c4-124m', tokenizer_id='gpt2-bpe'), v4)
+rack.mount(CartridgeManifest('code', CartridgeRole.DOMAIN_CAPABILITY,
+                             base_model_id='c4-124m', tokenizer_id='gpt2-bpe'), code, weight=0.3)
+rack.register_hooks(model)
+
+# Per generation step: feed the same live compiled channel features to mounted cartridges.
+rack.set_weights(live_features)
 ```
 
 ## Requirements

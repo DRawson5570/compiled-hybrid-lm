@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-05-24
+
+- Added a cartridge manifest and `SteererCartridgeRack` runtime API so independent superposition steerer cartridges and domain/task capability cartridges can be mounted, weighted, hot-swapped, and additively composed through one residual-stream hook rack.
+- Documented the dual-cartridge architecture across product, strategy, infrastructure, and README docs, including manifest compatibility fields and side-by-side loading semantics.
+- Added focused tests for cartridge compatibility checks, multi-cartridge residual composition, incompatible-cartridge rejection, and per-cartridge channel feature updates.
+
 ## 2026-05-22
 
 - Added `coding_gaps.md` to track the code-only plan for closing hybrid architecture scaffolding gaps.
