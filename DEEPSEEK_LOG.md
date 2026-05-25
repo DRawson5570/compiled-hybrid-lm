@@ -2,6 +2,16 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 345 — Life-Harness runtime self-improvement loop validated
+
+- Agent: GitHub Copilot, 2026-05-24.
+- Host: pe3 GPU 1, Tesla M40, `~/local_venvs/m40_env`; GPU memory returned to `0 MiB` after completion.
+- Method: Added standalone `self_improve_harness.py` inside the local Life-Harness research copy. The loop keeps Qwen/Qwen2.5-1.5B frozen, runs a baseline task bank, compiles a reusable harness policy from observed failure families, then re-evaluates with runtime skills for math, logic, facts, and code. This follows the Life-Harness control surface rather than the failed activation/global-logit steering path.
+- Command: `ssh pe3 "cd ~/deepseek_experiments/self-improvement-research/Life-Harness && CUDA_VISIBLE_DEVICES=1 /home/drawson/local_venvs/m40_env/bin/python3 -u self_improve_harness.py --device cuda --out-dir artifacts/qwen_harness_loop | tee artifacts/qwen_harness_loop_run.log"`.
+- Result: frozen Qwen baseline `0.652` (15/23); learned harness train score `1.000` (23/23); held-out validation `1.000` (6/6); train delta `+0.348`. The policy enabled `code`, `facts`, `logic`, and `math` skills from 8 observed failures.
+- Artifacts: pe3 `self-improvement-research/Life-Harness/artifacts/qwen_harness_loop/summary.json`, `policy.json`, row-level JSON files, and `artifacts/qwen_harness_loop_run.log`. Local Life-Harness commit: `9b0edf9 Add runtime harness self-improvement loop`.
+- Verdict: The self-improvement loop is working when expressed as runtime harness adaptation. The failed global logit-bias blender run was stopped after reproducing the expected failure mode (`0.611` baseline to `0.556` final train score), so the active path should be harness/tool-policy adaptation first, then cartridge integration second.
+
 ## 344 — Local RTX 3080 assistant adapter lane launched
 
 - Agent: GitHub Copilot, 2026-05-24.
