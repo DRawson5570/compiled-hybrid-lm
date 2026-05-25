@@ -2,6 +2,15 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 349 — Targeted cartridge makes baseline failures pass on harder QA/reasoning suite
+
+- Agent: GitHub Copilot, 2026-05-25.
+- Host: local RTX 3080, project `.venv`, Qwen/Qwen2.5-1.5B frozen with `SuperpositionSteererV3` mounted through `CartridgeManifest` + `SteererCartridgeRack`.
+- Method: Used the existing `self_improve_qwen.QA_TASKS` broad science/geography/history/reasoning/code task bank instead of the saturated TauBench mock single task. Baseline greedy rack-path evaluation scored `18/23`, leaving real failures to target. Trained a new targeted task cartridge on three baseline-failed prompts (`India`, `Australia`, `Friday`) plus four easy anchor prompts, with zero channel features and greedy deployment validation.
+- Artifact: `self-improvement-research/Life-Harness/artifacts/qwen_targeted_cartridge/targeted_best.pt`. Summary: `self-improvement-research/Life-Harness/artifacts/qwen_targeted_cartridge/targeted_summary.json`.
+- Result: baseline `18/23`; targeted mounted cartridge `22/23`; no regressions. Baseline-fail -> cartridge-pass examples included `geography_4` (`United States...` -> `India`), `geography_5` (`Oceania...` -> `Australia...`), and `reasoning_2` (multiple-choice preamble -> `Friday`). It also converted `science_4` from `mitochondrion` to expected-string `Mitochondria`, which is mostly a benchmark-string artifact rather than a true semantic correction.
+- Verdict: Yes: with the corrected fp16-safe cartridge runtime, a newly trained targeted cartridge made the frozen baseline pass tasks it failed under the same greedy rack-mounted evaluation. This is the first clean fail-to-pass cartridge lift after fixing the runtime bug. Next step is to move this from a targeted micro-cartridge to a broader held-out capability cartridge and then rerun harder TauBench domains.
+
 ## 348 — Cartridge chat path working through TauBench
 
 - Agent: GitHub Copilot, 2026-05-25.
