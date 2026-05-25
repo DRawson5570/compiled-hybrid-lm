@@ -15,6 +15,16 @@ Keep this file current. Record the command, host, upstream SHA, model artifact, 
 - Validation: local `.venv/bin/python -m pytest hybrid/tests/test_backends.py hybrid/tests/test_hf_deepseek.py hybrid/tests/test_build_chat_dataset.py -q` -> `7 passed`; local `py_compile` for changed trainer/backend/chat files passed; pe3 `py_compile` for trainer/backend passed.
 - Verdict: DeepSeek's pe3 3B crash is fixed for the memory-safe smoke path. Full compiled-steerer training on the 3B ZeroQ backbone remains a separate engineering step, likely requiring activation checkpointing or a custom no-grad frozen-backbone adapter path.
 
+## 358 — EOS-trained chat cartridge stops cleanly on targeted probes
+
+- Agent: GitHub Copilot, 2026-05-25.
+- Dataset: `artifacts/chat_steerer_finish_basic_eos_v1`, rebuilt from the cleaned basic chat corpus with explicit assistant EOS supervision. README reports `train_tokens=309,076`, `val_tokens=54,422`, `examples=4,798`, `assistant_loss_only=1`, `assistant_eos=1`.
+- Training command: `CUDA_VISIBLE_DEVICES=0 .venv/bin/python hybrid/train_steerer_chat.py --data-dir artifacts/chat_steerer_finish_basic_eos_v1 --out-dir artifacts/steerer_chat_finish_basic_eos_v1_b384 --epochs 55 --steps 220 --batch 4 --seq-len 128 --lr 3e-4 --max-eval-tokens 30000 --chat-steerer adapter --adapter-bottleneck 384 --device cuda`.
+- Result: frozen base `123,802,705` params, chat adapter `5,408,649` trainable params, `hooks=9`, `eval_base=1942.4`, `eval_super=1732.9`, best `eval_chat=1.1`.
+- Runtime fix: `chat_cartridge.py` now stops on sampled GPT-2 EOS, refuses EOS on dangling numbered-list markers or unfinished punctuation, requires requested numbered-list counts before accepting EOS, and trims sentences without counting `1.`/`2.`/`3.` markers as sentences.
+- Final probe: `artifacts/steerer_chat_finish_basic_eos_v1_b384/probe_report_targeted_final.json`. Prompts for hello, chat cartridge definition, health tips, gravity, Python add function, and `2 + 2` all produced direct clean answers with no junk tails; health prompt returned all three list items.
+- Validation: `.venv/bin/python -m pytest hybrid/tests/test_build_chat_dataset.py hybrid/tests/test_chat_cartridge_runtime.py -q` -> `8 passed`; `py_compile hybrid/chat_cartridge.py` passed.
+
 ## 356 — Local anchor chatbot lane completed: best b384 candidate still mixed
 
 - Agent: GitHub Copilot, 2026-05-25.

@@ -111,10 +111,48 @@ def has_repeated_tail(token_ids: list[int], ngram: int = 8) -> bool:
 def trim_to_sentences(text: str, max_sentences: int) -> str:
     if max_sentences <= 0:
         return text.strip()
-    matches = list(re.finditer(r'[.!?]', text))
+    matches = []
+    for match in re.finditer(r'[.!?]', text):
+        line_start = text.rfind('\n', 0, match.start()) + 1
+        if re.fullmatch(r'\s*\d+\.', text[line_start:match.end()]):
+            continue
+        matches.append(match)
     if len(matches) < max_sentences:
         return text.strip()
     return text[:matches[max_sentences - 1].end()].strip()
+
+
+NUMBER_WORDS = {
+    'one': 1,
+    'two': 2,
+    'three': 3,
+    'four': 4,
+    'five': 5,
+}
+
+
+def requested_numbered_items(user_text: str) -> int:
+    lowered = user_text.lower()
+    for word, count in NUMBER_WORDS.items():
+        if re.search(rf'\b{word}\b', lowered):
+            return count
+    match = re.search(r'\b([1-5])\b', lowered)
+    return int(match.group(1)) if match else 0
+
+
+def answer_can_stop(text: str, required_items: int = 0) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if re.search(r'(?:^|\n)\s*\d+\.\s*$', stripped):
+        return False
+    if required_items > 0 and re.search(r'(?:^|\n)\s*1\.', stripped):
+        item_numbers = [int(match.group(1)) for match in re.finditer(r'(?:^|\n)\s*([1-5])\.', stripped)]
+        if item_numbers and max(item_numbers) < required_items:
+            return False
+    if stripped.endswith((':', ',', ';')):
+        return False
+    return True
 
 
 def sample_next(logits: torch.Tensor, temperature: float, top_k: int, top_p: float,
@@ -198,6 +236,7 @@ class CartridgeChatRuntime:
         ids = self.tokenizer.encode(prompt)
         generated: list[int] = []
         stop_markers = ['\n\nUser:', '\nUser:', '\n\nSystem:', '\nSystem:']
+        required_items = requested_numbered_items(user_text)
 
         for _ in range(max_new_tokens):
             ctx = ids[-context_len:]
@@ -213,6 +252,11 @@ class CartridgeChatRuntime:
                 generated=generated,
                 repetition_penalty=repetition_penalty,
             )
+            if next_id == self.tokenizer.eos_token_id:
+                text = self.tokenizer.decode(generated)
+                if answer_can_stop(text, required_items):
+                    return trim_to_sentences(text, max_sentences)
+                continue
             ids.append(next_id)
             generated.append(next_id)
             text = self.tokenizer.decode(generated)

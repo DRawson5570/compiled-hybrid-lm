@@ -95,12 +95,12 @@ FOCUSED_CHAT_EXAMPLES = [
 
 def encode_transcript(user: str, assistant: str, tokenizer) -> tuple[list[int], list[int]]:
     prefix = f'System:\n{SYSTEM}\n\nUser:\n{user}\n\nAssistant:\n'
-    response = f'{assistant}\n\n'
     prefix_ids = tokenizer.encode(prefix)
-    response_ids = tokenizer.encode(response)
+    response_ids = tokenizer.encode(assistant.strip()) + [tokenizer.eos_token_id]
     ids = prefix_ids + response_ids
     # Mask predicts the current token. The trainer shifts it by one so loss is
-    # charged only for assistant response tokens, not system/user scaffolding.
+    # charged only for assistant response tokens and the explicit end token,
+    # not system/user scaffolding.
     mask = [0] * len(prefix_ids) + [1] * len(response_ids)
     return ids, mask
 
@@ -204,7 +204,7 @@ def main():
     torch.save(val_ids, out_dir / 'validation_ids.pt')
     torch.save(val_mask, out_dir / 'validation_loss_mask.pt')
     (out_dir / 'README.txt').write_text(
-        f'Chat cartridge seed corpus\ntrain_tokens={len(train_ids)}\nval_tokens={len(val_ids)}\nexamples={len(examples)}\nsynthetic_rounds={args.rounds}\nalpaca_count={args.alpaca_count}\nanchor_repeat={args.anchor_repeat}\nfocused_repeat={args.focused_repeat}\nshuffle_seed={args.shuffle_seed}\nassistant_loss_only=1\n',
+        f'Chat cartridge seed corpus\ntrain_tokens={len(train_ids)}\nval_tokens={len(val_ids)}\nexamples={len(examples)}\nsynthetic_rounds={args.rounds}\nalpaca_count={args.alpaca_count}\nanchor_repeat={args.anchor_repeat}\nfocused_repeat={args.focused_repeat}\nshuffle_seed={args.shuffle_seed}\nassistant_loss_only=1\nassistant_eos=1\n',
         encoding='utf-8',
     )
 

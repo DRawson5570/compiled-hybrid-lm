@@ -12,8 +12,10 @@ from hybrid.build_chat_dataset import (
     GREETING_EXAMPLES,
     SEED_EXAMPLES,
     build_examples,
+    encode_transcript,
     generate_examples,
 )
+from transformers import AutoTokenizer
 
 
 def test_generate_examples_exposes_anchor_repeats():
@@ -33,3 +35,13 @@ def test_build_examples_shuffles_deterministically_without_losing_rows():
     assert shuffled_a == shuffled_b
     assert shuffled_a != original
     assert sorted(shuffled_a) == sorted(original)
+
+
+def test_encode_transcript_trains_explicit_assistant_eos():
+    tokenizer = AutoTokenizer.from_pretrained('gpt2')
+
+    ids, mask = encode_transcript('Hello', 'Hello. What would you like to work on today?', tokenizer)
+
+    assert ids[-1] == tokenizer.eos_token_id
+    assert mask[-1] == 1
+    assert mask[0] == 0
