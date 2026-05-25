@@ -9,19 +9,20 @@ Repo: `github.com/DRawson5570/compiled-hybrid-lm`
 ## Table of Contents
 
 1. [What This Is](#1-what-this-is)
-2. [Architecture Overview](#2-architecture-overview)
-3. [Hardware Requirements](#3-hardware-requirements)
-4. [Setup](#4-setup)
-5. [Data Pipeline](#5-data-pipeline)
-6. [Compiled Channels (GPT-2 BPE)](#6-compiled-channels-gpt-2-bpe)
-7. [Superposition Steering](#7-superposition-steering)
-8. [ZeroQ Distributed Training](#8-zeroq-distributed-training)
-9. [HF Model Wrapper](#9-hf-model-wrapper)
-10. [Training](#10-training)
-11. [Evaluation](#11-evaluation)
-12. [Generation](#12-generation)
-13. [Results](#13-results)
-14. [Troubleshooting](#14-troubleshooting)
+2. [Quick Start](#2-quick-start)
+3. [Architecture Overview](#3-architecture-overview)
+4. [Hardware Requirements](#4-hardware-requirements)
+5. [Setup](#5-setup)
+6. [Data Pipeline](#6-data-pipeline)
+7. [Compiled Channels](#7-compiled-channels)
+8. [Superposition Steering](#8-superposition-steering)
+9. [ZeroQ Distributed Training](#9-zeroq-distributed-training)
+10. [HF Model Wrapper](#10-hf-model-wrapper)
+11. [Training](#11-training)
+12. [Evaluation](#12-evaluation)
+13. [Generation](#13-generation)
+14. [Results](#14-results)
+15. [Troubleshooting](#15-troubleshooting)
 
 ---
 
@@ -33,7 +34,38 @@ The result: a model that beats GPT-2 Small (PPL=29.0) with ~1/100th the training
 
 ---
 
-## 2. Architecture Overview
+## 2. Quick Start
+
+Prove the pipeline works in 10 minutes on any machine with a GPU:
+
+```bash
+# Clone and install
+git clone https://github.com/DRawson5570/compiled-hybrid-lm.git
+cd compiled-hybrid-lm
+pip install torch transformers
+
+# Run the validation script
+python3 hybrid/quickstart.py
+```
+
+This loads a pre-built 124M C4 base model, runs a WikiText steerer cartridge, and evaluates PPL. Expected output: eval_s < 35, eval_b < 50.
+
+For a larger test with ZeroQ 4-bit distributed training:
+
+```bash
+# Single GPU, tiny model (verifies infrastructure):
+torchrun --nproc_per_node=1 hybrid/train_4b_distributed.py \
+  --backend dense --model-config test --epochs 1 --steps 1 --batch 1
+
+# Multi-GPU, 4-bit compute (verifies ZeroQ):
+torchrun --nproc_per_node=2 hybrid/train_4b_distributed.py \
+  --backend zeroq --model-config test --compute-in-4bit \
+  --epochs 1 --steps 1 --batch 1 --zeroq-path ~/ZeroQ
+```
+
+---
+
+## 3. Architecture Overview
 
 ```
                     ┌──────────────────────────────────┐
@@ -88,7 +120,7 @@ The compiled model lives in BPE-8000 space. The GPT-2 BPE compiled channels are 
 
 ---
 
-## 3. Hardware Requirements
+## 4. Hardware Requirements
 
 | Component | Minimum | Recommended |
 |---|---|---|
@@ -103,7 +135,7 @@ This project was developed on:
 
 ---
 
-## 4. Setup
+## 5. Setup
 
 ### 4.1 Clone and Dependencies
 
@@ -148,7 +180,7 @@ python3 cache_c4.py
 
 ---
 
-## 5. Data Pipeline
+## 6. Data Pipeline
 
 ### 5.1 WikiText-103 (BPE-8000)
 
@@ -183,80 +215,26 @@ c4 = load_dataset('allenai/c4', 'en', split='train', streaming=True,
 
 ---
 
-## 6. Compiled Channels (BPE-8000)
+## 7. Compiled Channels
 
-The full 21-channel compiled pipeline lives in the main repo at `~/llm_decoupling/`.
-It produces per-position log-probabilities for 21 statistical models.
-
-### Channel Inventory (v33)
-
-| # | Name | Description | PPL (eval) |
-|---|---|---|---|
-| 0 | kn | Kneser-Ney 5-gram | 89.88 |
-| 1 | mix | Sparse mixture cluster LM | 293.72 |
-| 2-3 | tri_f/s | Decayed trigram cache (fast/slow) | 4086/4828 |
-| 4-5 | bi_f/s | Decayed bigram cache | 2316/2261 |
-| 6-7 | uc_f/s | Decayed unigram cache | 2070/2111 |
-| 8-10 | attn_uf/us/ug | Attention unigram (fast/slow/global) | 1437/537/3342 |
-| 11-12 | attn_rf1/rs1 | Attention residual K=1 | 391/180 |
-| 13-15 | attn_rf2/rs2/rg2 | Attention residual K=2 | 209/200/1455 |
-| 16-17 | attn_rf3/rs3 | Attention residual K=3 | 257/352 |
-| 18 | ppmi | PPMI semantic similarity | 7647 |
-| 19 | knn | KNN retrieval | 5664 |
-| 20 | shape | Word shape transitions | 10940 |
-
-### Dumping for Blender Training
+Rebuilt for GPT-2 BPE (V=50257). Uses efficient O(T) streaming channels.
 
 ```bash
-python3 hybrid/v3_super_blender/dump_features_v33.py \
-  --kn-pickle artifacts/compiled_wiki_lm_v23/kn7_22m.pkl \
-  --counts-file artifacts/compiled_wiki_lm_v14/counts_k2_c64k.pt \
-  --out-dir hybrid/v3_super_blender/data_real_v33
+# Build priors (one-time):
+python3 build_v3_priors.py
+# → artifacts/compiled_priors_v3/word_topics.pt, pos_stats.pkl
 
-# Produces: val.npz (30K tokens), eval.npz (100K tokens)
-# Each contains: log_p_targets (T,21), log_p_observed (T,21),
-#                entropy (T,21), max_log_prob (T,21), observed (T,),
-#                targets (T,), channel_names (21,)
+# Verify:
+python3 quickstart.py
 ```
+
+The 21 compiled channels are: 6 local (uni, bi_fast, bi_slow, tri_fast, tri_slow, skip2), 7 mid (skip3, recency, entropy, shape, global_uni, ppmi_cos, ppmi_max), 8 global (ppmi_norm, punct_density, repetition, unique_ratio, topic, KV, POS, spare).
+
+Channel features are computed per batch at runtime via `gpu_channels.py` (GPU-vectorized) and `FastNgramFeatures` (CPU O(1) n-gram statistics). No pre-computed log-probability dumps needed — features are live-computed from training data during the forward pass.
 
 ---
 
-## 7. Compiled Channels (GPT-2 BPE)
-
-Rebuilt from scratch for V=50257. Uses efficient O(T) streaming channels
-(no O(V²) count tables that would blow up memory).
-
-### Quick Dump
-
-```bash
-# Build 10-channel dump (5 compiled logp + tri_f, bi_f, uc_f, uni, recency)
-python3 hybrid/dump_gpt2_channels_v2.py \
-  --val-tokens 30000 --eval-tokens 100000 \
-  --out-dir artifacts/gpt2_channels_v2
-
-# Produces: val.npz, eval.npz
-# Same format as BPE-8000 dump (compatible with blender training)
-```
-
-### Pre-built Compiled Builder
-
-```bash
-# One-time: build GPT-2 compiled channel artifact from WikiText train
-python3 -c "
-from hybrid.compiled_features import GPT2CompiledChannelBuilder, GPT2CompiledChannelConfig
-import torch
-wt = torch.load('artifacts/wikitext_gpt2/train_ids.pt', weights_only=False)
-builder = GPT2CompiledChannelBuilder.from_ids(
-    wt, GPT2CompiledChannelConfig(alpha=0.1, max_train_tokens=50_000_000)
-)
-builder.save('artifacts/compiled_builder_50m.pt')
-"
-# Serialized: ~365 MB
-# Provides 21 causal feature channels per position
-```
----
-
-## 7. Superposition Steering
+## 8. Superposition Steering
 
 The SuperpositionSteererV3 (`superposition_steerer_v3.py`) injects 21-channel compiled features as activation offsets at specific transformer layers via forward hooks.
 
@@ -292,7 +270,7 @@ python3 chat_cartridge.py --mode chat \
 
 ---
 
-## 8. ZeroQ Distributed Training
+## 9. ZeroQ Distributed Training
 
 4-bit quantized ZeRO-3 via `backends.py` and `train_4b_distributed.py`.
 
@@ -326,7 +304,7 @@ M40 requires bitsandbytes == 0.41.3 + triton == 3.3.1. **Must pin both.** 0.46.1
 
 ---
 
-## 9. HF Model Wrapper
+## 10. HF Model Wrapper
 
 `hf_deepseek.py` registers DeepSeekForCausalLM with HuggingFace.
 
@@ -340,7 +318,7 @@ Explicit `nn.Linear` layers for Q/K/V/O — every weight independently quantizab
 
 ---
 
-## 10. Training
+## 11. Training
 
 ### Compiled Priors
 
@@ -357,7 +335,7 @@ python3 build_v3_priors.py  # → artifacts/compiled_priors_v3/
 
 ---
 
-## 11. Evaluation
+## 12. Evaluation
 
 ### PPL on WikiText-103
 
@@ -380,7 +358,7 @@ python3 hybrid/capability_pipeline.py benchmark \
 
 ---
 
-## 12. Generation
+## 13. Generation
 
 ```bash
 # Production chat (with steerer cartridge):
@@ -396,7 +374,7 @@ Features: temperature, top-p, top-k, repetition penalty, stop markers, n-gram re
 
 ---
 
-## 13. Results
+## 14. Results
 
 ### V4 Co-trained Steerer (124M params, GPT-2 BPE)
 
@@ -425,7 +403,7 @@ Features: temperature, top-p, top-k, repetition penalty, stop markers, n-gram re
 
 ---
 
-## 14. Troubleshooting
+## 15. Troubleshooting
 
 ### "CUDA out of memory"
 
