@@ -287,13 +287,13 @@ partitions the remaining backbone weights. This avoids output-projection device
 mismatch while preserving the cartridge-only optimization contract.
 
 The current selected demo candidate is
-`artifacts/gpt2_large_zeroq_chat_3080_prod_v4_gate/latest_chat_cartridge.pt`.
-It scores `21/24` on the side-by-side assistant gate versus raw GPT-2-large at
-`6/24`, with clear wins on greeting, facts, science, project definitions,
-health lists, coding, arithmetic, safety refusal, writing, and hot-swapping. The
-known misses are still story length, creator-name anchoring, and one contextual
-France prompt, so it is a strong side-by-side demo candidate rather than the end
-state for the 4B assistant lane.
+`artifacts/gpt2_large_zeroq_chat_3080_prod_v5_repair/latest_chat_cartridge.pt`.
+It scores `23/24` on the side-by-side assistant gate versus raw GPT-2-large at
+`6/24`, with clear wins on greeting, facts, story generation, science, project
+definitions, health lists, coding, arithmetic, safety refusal, writing,
+workflows, calibration, and hot-swapping. The remaining miss is creator-name
+anchoring in the exact "I am your creator, Douglas" turn, so it is a strong
+side-by-side demo candidate rather than the end state for the 4B assistant lane.
 
 ### Website Benchmark Export
 

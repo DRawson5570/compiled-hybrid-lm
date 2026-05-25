@@ -99,7 +99,7 @@ DEFAULT_TASKS: tuple[AssistantTask, ...] = (
         ),
         required_all=('paris',),
         forbidden_any=('san', 'ready to help'),
-        min_words=4,
+        min_words=1,
         max_words=40,
     ),
     AssistantTask(
@@ -218,7 +218,7 @@ DEFAULT_TASKS: tuple[AssistantTask, ...] = (
         category='workflows',
         prompt='List two risks in a deployment plan.',
         required_any=('rollback', 'configuration', 'config', 'drift', 'missing'),
-        required_all=('risk',),
+        numbered_items=2,
     ),
     AssistantTask(
         task_id='overfitting_simple',

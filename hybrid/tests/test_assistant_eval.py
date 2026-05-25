@@ -37,6 +37,38 @@ def test_score_answer_reports_missing_requirements():
     assert 'forbidden:System:' in row.failures
 
 
+def test_capital_followup_accepts_concise_answer():
+    task = AssistantTask(
+        task_id='capital_france_after_identity',
+        category='facts',
+        prompt='What is the capital of France?',
+        required_all=('paris',),
+        min_words=1,
+    )
+
+    row = score_answer(task, 'Paris.')
+
+    assert row.passed
+
+
+def test_deployment_risks_do_not_require_literal_risk_word():
+    task = AssistantTask(
+        task_id='deployment_risks',
+        category='workflows',
+        prompt='List two risks in a deployment plan.',
+        required_any=('rollback', 'configuration', 'config', 'drift', 'missing'),
+        numbered_items=2,
+    )
+
+    row = score_answer(
+        task,
+        '1. Configuration drift can make production behave differently from testing.\n'
+        '2. Missing rollback steps can make a failed deployment harder to recover from.',
+    )
+
+    assert row.passed
+
+
 def test_summarize_groups_by_category():
     rows = [
         score_answer(AssistantTask('a', 'x', 'a', required_all=('yes',)), 'yes'),
