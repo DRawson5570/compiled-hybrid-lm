@@ -101,12 +101,14 @@ class SuperpositionSteererV3(nn.Module):
             w_soft = torch.softmax(gated_w / temp, dim=-1)
             offset = torch.einsum('btc, cd -> btd', w_soft, self.steer_global)
 
-        h_rms = h.pow(2).mean(dim=-1, keepdim=True).sqrt()
-        o_rms = offset.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp(min=1e-8)
-        normalized_offset = offset * (h_rms / o_rms)
+        h_float = h.float()
+        offset_float = offset.float()
+        h_rms = h_float.pow(2).mean(dim=-1, keepdim=True).sqrt()
+        o_rms = offset_float.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp(min=1e-8)
+        normalized_offset = offset_float * (h_rms / o_rms)
 
         gamma = self.gammas[str(layer_idx)].abs()
-        return h + (gamma * normalized_offset)
+        return h + (gamma.float() * normalized_offset).to(dtype=h.dtype)
 
     def register_hooks(self, model) -> int:
         self.remove_hooks()

@@ -11,6 +11,7 @@ DEEPSEEK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(DEEPSEEK.parent))
 
 from hybrid.cartridges import CartridgeManifest, CartridgeRole, SteererCartridgeRack
+from hybrid.superposition_steerer_v3 import SuperpositionSteererV3
 
 
 class AddOneLayer(nn.Module):
@@ -129,3 +130,16 @@ def test_rack_preserves_tuple_outputs_and_hidden_dtype():
     assert cache == 'cache'
     assert hidden.dtype == torch.float16
     assert torch.allclose(hidden, torch.full_like(hidden, 0.25))
+
+
+def test_superposition_steerer_half_precision_rms_is_finite_with_zero_gamma():
+    steerer = SuperpositionSteererV3(d_model=4, inject_layers=[0], init_scale=1.0, noise_scale=0.0)
+    steerer.gammas['0'].data.zero_()
+    steerer.set_weights(torch.zeros(1, 2, 21))
+
+    hidden = torch.full((1, 2, 4), 512.0, dtype=torch.float16)
+    result = steerer._steer_layer(hidden, 0)
+
+    assert result.dtype == torch.float16
+    assert torch.isfinite(result).all()
+    assert torch.equal(result, hidden)

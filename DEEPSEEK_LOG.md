@@ -2,14 +2,24 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
-## 347 — Cartridge technology confirmation run: integration works, artifact fails
+## 348 — Cartridge chat path working through TauBench
+
+- Agent: GitHub Copilot, 2026-05-25.
+- Root cause fixed: `SuperpositionSteererV3` computed residual RMS in fp16, so large Qwen hidden states overflowed to `inf`; even zero-gamma steering became `0 * inf -> NaN`, which caused punctuation-collapse generations. RMS normalization now computes in float32, then casts the delta back to the hidden dtype. Added regression coverage in `hybrid/tests/test_cartridges.py`.
+- Adapter fix: `TauBench/scripts/eval_qwen_cartridge_direct.py` now converts Qwen native `<tool_call>{...}</tool_call>` blocks into TauBench `ToolCall` objects when the tool name is in the environment schema. Without this, Qwen-Instruct emitted valid-looking tool calls that TauBench treated as plain text.
+- Validation: `/home/drawson/deepseek_experiments/.venv/bin/python -m pytest hybrid/tests/test_cartridges.py` -> `6 passed`; `py_compile` on the TauBench direct adapter passed; zero-gamma cartridge logit check matched baseline exactly (`max_abs_diff 0.0`).
+- Deterministic QA after the fp16 fix: frozen Qwen/Qwen2.5-1.5B baseline scored `6/6`; the original loaded cartridge `artifacts/qwen_self_improve/cartridge_best.pt` also scored `6/6` and no longer generated `!` spam.
+- TauBench mock chat/tool result: Qwen/Qwen2.5-1.5B-Instruct with the stable active cartridge `artifacts/qwen_self_improve_scaled/cartridge_gamma_0.0001.pt` completed task `create_task_1`, executed the `create_task` tool call, and scored `1.0`. Baseline also scored `1.0`. Output summary: `self-improvement-research/Life-Harness/artifacts/qwen_tau_direct_smoke/mock_summary_instruct_stable_cartridge.json`.
+- Verdict: The corrected path is working end-to-end: Qwen-Instruct + mounted cartridge rack + TauBench tool execution + scored success. The original base-model QA cartridge is stable after the fp16 fix, but for chat/TauBench we should use an Instruct-compatible low-gamma cartridge until a real chat capability cartridge is trained.
+
+## 347 — Cartridge technology confirmation run: false negative before fp16 fix
 
 - Agent: GitHub Copilot, 2026-05-25.
 - Host: local RTX 3080, Python `.venv`; local GPU was free enough for Qwen2.5-1.5B. pe3 was clean before and after.
 - Method: Ran the corrected TauBench direct adapter against the mock domain with the frozen Qwen baseline and then the mounted Qwen cartridge artifact `self-improvement-research/Life-Harness/artifacts/qwen_self_improve/cartridge_best.pt`. This adapter uses TauBench's orchestrator/user simulator/evaluator around our `QwenCartridgeModel`, which mounts `SuperpositionSteererV3` through `CartridgeManifest` + `SteererCartridgeRack`.
-- TauBench result: completed baseline and cartridge simulations for mock task `create_task_1`; both scored `0.0` reward, with no simulation errors. Output summary: `self-improvement-research/Life-Harness/artifacts/qwen_tau_direct_smoke/mock_summary.json`. The cartridge half loaded successfully through the rack (`Cartridge rack mounted: 10 hooks, 32,925 params`, then `Cartridge loaded ...`) but generated punctuation spam rather than valid tool calls.
-- Focused QA result through the same rack-mounted Qwen path: baseline raw QA scored `5/6`; loaded cartridge scored `0/6` and generated `!!!!!!!!!!!!!!!!...` for all six prompts. This directly contradicts the old stochastic/simple evaluation claim that the artifact improved `0.667 -> 1.000`.
-- Verdict: The corrected evaluation confirms the integration uses our cartridge technology, but the current Qwen cartridge artifact does **not** work under the deterministic rack-mounted path. Next step is not more harness plumbing; it is to retrain or constrain the cartridge so it remains stable under greedy/tool-use inference, then rerun the same TauBench adapter.
+- TauBench result before the fix: completed baseline and cartridge simulations for mock task `create_task_1`; both scored `0.0` reward, with no simulation errors. Output summary: `self-improvement-research/Life-Harness/artifacts/qwen_tau_direct_smoke/mock_summary.json`. The cartridge half loaded successfully through the rack (`Cartridge rack mounted: 10 hooks, 32,925 params`, then `Cartridge loaded ...`) but generated punctuation spam rather than valid tool calls.
+- Focused QA result before the fix: baseline raw QA scored `5/6`; loaded cartridge scored `0/6` and generated `!!!!!!!!!!!!!!!!...` for all six prompts.
+- Correction: this was a false negative caused by fp16 RMS overflow inside `SuperpositionSteererV3`, not proof that the artifact was bad. Entry 348 records the fix and successful rerun.
 
 ## 346 — Corrected Life-Harness validation path for cartridge technology
 
