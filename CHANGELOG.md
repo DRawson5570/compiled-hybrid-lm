@@ -7,6 +7,9 @@
 - Added a memory-safe `--train-surface head_bias` mode plus configurable `--eval-tokens` for large ZeroQ smoke tests on M40 GPUs, while keeping `--train-surface cmi_steerer` available for smaller or future checkpointed runs.
 - Added assistant-EOS supervision and list-aware decoding guards for chat cartridges so generated answers stop cleanly without truncating numbered lists.
 - Added tests proving the ZeroQ backend contract with a fake coordinator and verifying the explicit DeepSeek backbone still exposes the cartridge hook ABI.
+- Added a `4b` DeepSeek distributed-trainer config and routed Maxwell/M40 ZeroQ coordination through CPU/Gloo for unsupported CUDA/NCCL collectives.
+- Routed small trainable-surface gradient averaging through the backend's Gloo process group on Maxwell, allowing a steering-enabled 4B ZeroQ smoke to complete forward, backward, eval, and save on pe2.
+- Launched a detached pe2 10-epoch steering-enabled 4B ZeroQ test with config-specific checkpoint output under `artifacts/train_4b_cmi_steerer_zeroq`.
 - Added `hybrid.cartridge_harness`, an owned self-improvement harness for cartridge research/building with task/scoring primitives, private-fact task generation, baseline-vs-cartridge comparison, and an optional Qwen adapter-cartridge trainer/CLI.
 - Documented that Life-Harness is now only an optional external test mechanism; cartridge construction, scoring, artifacts, and result accounting live in the CMI repo.
 - Added anchor-repeat and deterministic shuffle controls to the chat dataset builder so broad assistant cartridge training can preserve core assistant behavior while mixing in Alpaca examples.

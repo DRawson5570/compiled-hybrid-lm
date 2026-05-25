@@ -26,6 +26,7 @@ class BackendHandle:
     trainable_parameter_names: tuple[str, ...]
     coordinator: Any | None = None
     wrapper: Any | None = None
+    grad_process_group: Any | None = None
 
     def memory_stats(self) -> dict[str, float]:
         if self.wrapper is None or not hasattr(self.wrapper, 'get_memory_stats'):
@@ -82,17 +83,27 @@ def trainable_parameters(model: nn.Module) -> list[nn.Parameter]:
     return [param for param in model.parameters() if param.requires_grad]
 
 
-def allreduce_trainable_grads(model: nn.Module, world_size: int | None = None) -> None:
+def allreduce_trainable_grads(
+    model: nn.Module,
+    world_size: int | None = None,
+    process_group: Any | None = None,
+) -> None:
     """Average gradients for manually synchronized distributed trainable surfaces."""
 
     if not dist.is_available() or not dist.is_initialized():
         return
-    actual_world_size = world_size or dist.get_world_size()
+    actual_world_size = world_size or dist.get_world_size(process_group)
     for param in model.parameters():
         if not param.requires_grad or param.grad is None:
             continue
-        dist.all_reduce(param.grad, op=dist.ReduceOp.SUM)
-        param.grad.div_(actual_world_size)
+        if process_group is not None and param.grad.is_cuda:
+            grad_cpu = param.grad.detach().to('cpu')
+            dist.all_reduce(grad_cpu, op=dist.ReduceOp.SUM, group=process_group)
+            grad_cpu.div_(actual_world_size)
+            param.grad.copy_(grad_cpu.to(param.grad.device))
+        else:
+            dist.all_reduce(param.grad, op=dist.ReduceOp.SUM, group=process_group)
+            param.grad.div_(actual_world_size)
 
 
 @dataclass(frozen=True)
@@ -132,7 +143,20 @@ class ZeroQPartitionedBackend:
         names = set_trainable_surface(model, surface)
         config, coordinator_cls, wrapper_cls, status_cls = self._load_zeroq()
 
-        coordinator = coordinator_cls(config)
+        process_group = None
+        if dist.is_available() and dist.is_initialized() and device.type == 'cuda':
+            major, _ = torch.cuda.get_device_capability(device)
+            if major < 6:
+                process_group = dist.new_group(backend='gloo')
+
+        if process_group is None:
+            coordinator = coordinator_cls(config)
+        else:
+            try:
+                coordinator = coordinator_cls(config, process_group=process_group)
+            except TypeError:
+                coordinator = coordinator_cls(config)
+                coordinator.process_group = process_group
         wrapper = wrapper_cls(model, coordinator, trainable_only=False)
 
         if self.stream_partition:
@@ -154,6 +178,7 @@ class ZeroQPartitionedBackend:
             trainable_parameter_names=names,
             coordinator=coordinator,
             wrapper=wrapper,
+            grad_process_group=process_group,
         )
 
     def _load_zeroq(self):

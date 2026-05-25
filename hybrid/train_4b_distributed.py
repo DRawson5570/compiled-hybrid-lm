@@ -31,6 +31,7 @@ V = 50257
 MODEL_CONFIGS = {
     "test": dict(d_model=192, n_layers=2, n_heads=6, d_ff=768, max_len=256),
     "3b": dict(d_model=2688, n_layers=32, n_heads=21, d_ff=10752, max_len=512),
+    "4b": dict(d_model=3072, n_layers=40, n_heads=24, d_ff=12288, max_len=512),
 }
 
 
@@ -47,8 +48,8 @@ def _rank0_print(rank, msg):
     if rank == 0: print(msg, flush=True)
 
 
-def _manual_allreduce_grads(model, world_size):
-    allreduce_trainable_grads(model, world_size)
+def _manual_allreduce_grads(model, world_size, process_group=None):
+    allreduce_trainable_grads(model, world_size, process_group=process_group)
 
 
 def load_priors(device):
@@ -163,9 +164,9 @@ def main():
 
             opt.zero_grad(set_to_none=True)
             loss.backward()
-            _manual_allreduce_grads(model, world_size)
+            _manual_allreduce_grads(model, world_size, handle.grad_process_group)
             if steerer is not None:
-                _manual_allreduce_grads(steerer, world_size)
+                _manual_allreduce_grads(steerer, world_size, handle.grad_process_group)
             opt.step()
             total_loss += loss.item()
 
@@ -196,7 +197,9 @@ def main():
         status = ""
         if eval_s < best_eval_b:
             best_eval_b = eval_s; status = "SAVED"
-            out_dir = os.path.expanduser("~/deepseek_experiments/artifacts/train_3b")
+            out_dir = os.path.expanduser(
+                f"~/deepseek_experiments/artifacts/train_{args.model_config}_{args.train_surface}_{args.backend}"
+            )
             os.makedirs(out_dir, exist_ok=True)
             torch.save({'state_dict': model.state_dict(),
                         'steerer_state': steerer.state_dict() if steerer is not None else None,

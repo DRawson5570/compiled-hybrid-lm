@@ -2,6 +2,20 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 359 — pe2 4B steering-enabled ZeroQ run passes smoke and starts 10-epoch test
+
+- Agent: GitHub Copilot, 2026-05-25.
+- Host: pe2 / poweredge2, two Tesla M40 24GB GPUs, `~/local_venvs/m40_env`, external ZeroQ checkout at `~/ZeroQ`.
+- Initial failures: the steering-enabled 4B path first failed on Maxwell/NCCL `dist.all_gather_into_tensor`, then on CUDA list `dist.all_gather`, both with `Cuda failure 'operation not supported'`. After the ZeroQ shard gather moved to CPU/Gloo, the next failure was manual CUDA `dist.all_reduce` for trainable gradients with the same M40/NCCL unsupported operation.
+- Fix: added `--model-config 4b` (`d_model=3072`, `n_layers=40`, `n_heads=24`, `d_ff=12288`, `max_len=512`), created a Gloo process group for CUDA devices with compute capability `< 6`, exposed it on the backend handle, and used it to CPU/Gloo-average trainable gradients. Checkpoints now write to `artifacts/train_{model_config}_{train_surface}_{backend}` instead of the hardcoded `train_3b` directory.
+- External pe2 ZeroQ patch: `~/ZeroQ/src/coordinator.py` now accepts an optional `process_group`, disables `all_gather_into_tensor` on sm_52 or `ZEROQ_DISABLE_ALL_GATHER_INTO_TENSOR=1`, gathers quantized shards on CPU/Gloo, then moves the assembled shard back to CUDA before dequantization.
+- Successful smoke command: `CUDA_VISIBLE_DEVICES=0,1 ZEROQ_DISABLE_ALL_GATHER_INTO_TENSOR=1 ~/local_venvs/m40_env/bin/torchrun --nproc_per_node=2 --nnodes=1 --node_rank=0 --master_addr=localhost --master_port=29555 hybrid/train_4b_distributed.py --backend zeroq --model-config 4b --train-surface cmi_steerer --epochs 1 --steps 1 --batch 1 --seq-len 16 --eval-tokens 128 --lr 1e-4 --steerer-lr 1e-4 --zeroq-path ~/ZeroQ`.
+- Smoke result: 4,686,973,009 params; ZeroQ stats `local_memory_mb=1215.2983`, `full_fp16_memory_mb=8642.1211`, `compression_ratio=7.1111`, `num_params=482`; `hooks=9`, `model_trainable=50,257`, `steerer_trainable=65,180`; epoch 1 `loss=11.6614`, `ppl=116011.2`, `eval_s=107563.9`; exited 0 and saved.
+- Active 10-epoch run: detached on pe2 PID `2137409`, log `~/deepseek_experiments/artifacts/logs/train_4b_cmi_steerer_zeroq_10ep_20260525_093313.log`, command uses `--epochs 10 --steps 50 --batch 1 --seq-len 64 --eval-tokens 512` on port `29556` with `ZEROQ_DISABLE_ALL_GATHER_INTO_TENSOR=1`.
+- Observed active state: run reached parameter count, ZeroQ preparation, CMI hook mounting, prior/data load, and active GPU training at about `16.8 GiB / 23.0 GiB` per M40 with both GPUs around `21-22%` utilization.
+- Validation: local `.venv/bin/python -m pytest hybrid/tests/test_backends.py hybrid/tests/test_hf_deepseek.py -q` -> `6 passed`; local and pe2 `py_compile` passed for `hybrid/backends.py`, `hybrid/train_4b_distributed.py`, and pe2 `~/ZeroQ/src/coordinator.py`.
+- Verdict: the pe2 4B steering-enabled path is no longer blocked by Maxwell/NCCL collectives. The implementation is smoke-proven and the requested full 10-epoch test is running detached.
+
 ## 357 — pe3 3B ZeroQ smoke fixed: head-bias surface completes 3 epochs
 
 - Agent: GitHub Copilot, 2026-05-25.
