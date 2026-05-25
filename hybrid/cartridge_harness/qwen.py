@@ -19,7 +19,10 @@ from hybrid.superposition_steerer_v3 import FeatureConditionedAdapterSteerer
 class QwenAdapterCartridgeRunner:
     """Frozen Qwen plus a trainable feature-conditioned cartridge."""
 
-    def __init__(self, model_name: str, device: str = "cuda", bottleneck: int = 64):
+    def __init__(self, model_name: str, device: str = "cuda", bottleneck: int = 64,
+                 cartridge_id: str = "owned-qwen-adapter-cartridge",
+                 role: str | CartridgeRole = CartridgeRole.DOMAIN_CAPABILITY,
+                 source_corpus: str = "hybrid.cartridge_harness"):
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -52,14 +55,14 @@ class QwenAdapterCartridgeRunner:
             gamma.data.fill_(0.02)
 
         self.manifest = CartridgeManifest(
-            cartridge_id="owned-qwen-adapter-cartridge",
-            role=CartridgeRole.DOMAIN_CAPABILITY,
+            cartridge_id=cartridge_id,
+            role=role,
             base_model_id=model_name,
             tokenizer_id=model_name,
             steerer_class="FeatureConditionedAdapterSteerer",
             inject_layers=tuple(self.inject_layers),
             parameter_count=sum(param.numel() for param in self.steerer.parameters()),
-            source_corpus="hybrid.cartridge_harness",
+            source_corpus=source_corpus,
             metadata={"runtime": "owned-cartridge-harness"},
         )
         self.rack = SteererCartridgeRack()
@@ -119,6 +122,11 @@ def train_answer_cartridge(
     runner.set_enabled(False)
     baseline_rows = evaluate_text_runner(eval_tasks, runner.generate)
     baseline_summary = build_summary(baseline_rows)
+    print(
+        f"[baseline] {baseline_summary.correct}/{baseline_summary.total} "
+        f"acc={baseline_summary.accuracy:.3f}",
+        flush=True,
+    )
 
     runner.set_enabled(True)
     runner.steerer.train()
@@ -135,6 +143,14 @@ def train_answer_cartridge(
             split = summary.by_split
             key = (split.get("heldout", {}).get("correct", 0), summary.correct)
             history.append({"step": step, "loss": loss, **summary.to_json()})
+            print(
+                f"[eval] step={step} loss={loss:.4f} "
+                f"correct={summary.correct}/{summary.total} "
+                f"acc={summary.accuracy:.3f} heldout="
+                f"{split.get('heldout', {}).get('correct', 0)}/"
+                f"{split.get('heldout', {}).get('total', 0)}",
+                flush=True,
+            )
             if key > best_key:
                 best_key = key
                 best_state = {
@@ -157,6 +173,11 @@ def train_answer_cartridge(
         runner.steerer.load_state_dict(best_state, strict=False)
     cartridge_rows = evaluate_text_runner(eval_tasks, runner.generate)
     cartridge_summary = build_summary(cartridge_rows)
+    print(
+        f"[final] {cartridge_summary.correct}/{cartridge_summary.total} "
+        f"acc={cartridge_summary.accuracy:.3f}",
+        flush=True,
+    )
     comparison = compare_rows(baseline_rows, cartridge_rows)
     result = {
         "model": runner.model_name,

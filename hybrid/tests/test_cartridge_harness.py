@@ -15,6 +15,8 @@ from hybrid.cartridge_harness import (
     normalize_first_line,
 )
 from hybrid.cartridge_harness.core import compare_rows
+from hybrid.cartridge_harness.rack_builder import assemble_rack_summary
+from hybrid.cartridge_harness.suites import build_all_suites, get_suite
 
 
 def test_private_fact_suite_has_train_and_heldout_paraphrases():
@@ -64,3 +66,50 @@ def test_compare_rows_finds_improvements_and_regressions():
 
     assert [row["task_id"] for row in comparison["improved"]] == ["a"]
     assert [row["task_id"] for row in comparison["regressed"]] == ["b"]
+
+
+def test_rack_suites_have_unique_ids_and_split_tasks():
+    suites = build_all_suites()
+
+    assert [suite.suite_id for suite in suites] == [
+        "private_facts",
+        "arithmetic",
+        "code_labels",
+        "safety_labels",
+        "instruction_format",
+    ]
+    assert len({suite.cartridge_id for suite in suites}) == len(suites)
+    for suite in suites:
+        assert get_suite(suite.suite_id) == suite
+        assert any(task.split == "train" for task in suite.tasks)
+        assert any(task.split == "heldout" for task in suite.tasks)
+
+
+def test_assemble_rack_summary_from_suite_outputs(tmp_path: Path):
+    suite = get_suite("arithmetic")
+    suite_dir = tmp_path / suite.suite_id
+    suite_dir.mkdir()
+    (suite_dir / "summary.json").write_text(
+        """
+        {
+          "artifact": "artifacts/rack/arithmetic/cartridge_best.pt",
+          "baseline_summary": {"total": 2, "correct": 0, "accuracy": 0.0, "by_split": {}},
+          "cartridge_summary": {"total": 2, "correct": 2, "accuracy": 1.0, "by_split": {}},
+          "improved": [{"task_id": "a"}],
+          "regressed": []
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    summary = assemble_rack_summary(
+        model="Qwen/Qwen2.5-1.5B",
+        device="cuda",
+        out_dir=tmp_path,
+        suites=["arithmetic"],
+    )
+
+    assert summary["items"][0]["suite"]["suite_id"] == "arithmetic"
+    assert summary["items"][0]["improved_count"] == 1
+    assert (tmp_path / "rack_manifest.json").exists()
+    assert (tmp_path / "rack_summary.json").exists()
