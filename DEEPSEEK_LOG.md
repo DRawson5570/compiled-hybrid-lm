@@ -2,6 +2,20 @@
 
 Keep this file current. Record the command, host, upstream SHA, model artifact, raw output path, and verdict for every experiment.
 
+## 360 — Production v2 chat cartridge passes expanded assistant gate
+
+- Agent: GitHub Copilot, 2026-05-25.
+- Goal: Continue from the clean EOS chat cartridge toward a production-grade general assistant, with an objective behavior gate instead of judging only `eval_chat` loss.
+- Change: added `hybrid/assistant_eval.py`, a deterministic scored assistant benchmark covering conversation, project knowledge, health/safety boundaries, refusal, writing, deployment/debugging workflows, calibration, coding, arithmetic, and basic science. `chat_cartridge.py` now supports deterministic greedy generation with `--temperature 0` and defaults to the production v2 cartridge.
+- Curriculum: added repeated production-assistant examples to `hybrid/build_chat_dataset.py`; built `artifacts/chat_steerer_production_v2` with `21,714` examples, `1,510,197` train tokens, `206,578` validation tokens, `537,200` train assistant-loss tokens, and explicit assistant EOS.
+- Training command: `CUDA_VISIBLE_DEVICES=0 .venv/bin/python hybrid/train_steerer_chat.py --data-dir artifacts/chat_steerer_production_v2 --out-dir artifacts/steerer_chat_production_v2_b384 --epochs 45 --steps 200 --batch 4 --seq-len 128 --lr 3e-4 --max-eval-tokens 50000 --chat-steerer adapter --adapter-bottleneck 384 --device cuda`.
+- Training result: frozen base `123,802,705` params, chat adapter `5,408,649` trainable params, `hooks=9`, best `eval_chat=1.1`; run completed 45 epochs on the local RTX 3080.
+- Expanded assistant eval: `CUDA_VISIBLE_DEVICES=0 .venv/bin/python hybrid/assistant_eval.py --chat-cartridge artifacts/steerer_chat_production_v2_b384/chat_cartridge.pt --device cuda --temperature 0 --max-new-tokens 160 --max-sentences 0 --report artifacts/assistant_eval_production_v2_b384_expanded.json` -> `16/16` passed.
+- Runtime smoke: `hybrid/chat_cartridge.py` with default production v2 cartridge answered a meeting email prompt with a formatted subject/body and answered the surprising-result prompt with a sanity-check/verify response; report saved at `artifacts/chat_runtime_production_v2_smoke.json`.
+- Artifact: promoted local candidate at `artifacts/steerer_chat_production_candidate/chat_cartridge.pt` with selection note `16/16 assistant_eval expanded artifacts/steerer_chat_production_v2_b384/chat_cartridge.pt`.
+- Validation: `.venv/bin/python -m py_compile hybrid/chat_cartridge.py hybrid/assistant_eval.py hybrid/build_chat_dataset.py` passed; `.venv/bin/python -m pytest hybrid/tests/test_assistant_eval.py hybrid/tests/test_chat_cartridge_runtime.py hybrid/tests/test_build_chat_dataset.py -q` passed.
+- Verdict: production v2 is the current general-assistant candidate. It is still a small frozen-base cartridge assistant, but it now has a reproducible curriculum, deterministic runtime, scored gate, and clean 16-task behavioral pass.
+
 ## 359 — pe2 4B steering-enabled ZeroQ run passes smoke and starts 10-epoch test
 
 - Agent: GitHub Copilot, 2026-05-25.

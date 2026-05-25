@@ -6,7 +6,9 @@ from pathlib import Path
 DEEPSEEK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(DEEPSEEK.parent))
 
-from hybrid.chat_cartridge import answer_can_stop, requested_numbered_items, trim_to_sentences
+import torch
+
+from hybrid.chat_cartridge import answer_can_stop, requested_numbered_items, sample_next, trim_to_sentences
 
 
 def test_answer_can_stop_rejects_dangling_numbered_list_marker():
@@ -34,3 +36,9 @@ def test_trim_to_sentences_ignores_numbered_list_markers():
     text = '1. Eat balanced meals.\n2. Move regularly.\n3. Sleep enough.'
 
     assert trim_to_sentences(text, 3) == text
+
+
+def test_sample_next_uses_argmax_when_temperature_is_zero():
+    logits = torch.tensor([0.1, 3.0, 2.0])
+
+    assert sample_next(logits, temperature=0.0, top_k=0, top_p=1.0) == 1

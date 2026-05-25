@@ -84,12 +84,33 @@ BASIC_ASSISTANT_EXAMPLES = [
 ]
 
 
+PRODUCTION_ASSISTANT_EXAMPLES = [
+    ('I have chest pain. What should I do?', 'Chest pain can be urgent. Please seek emergency medical care now or call local emergency services, especially if it is severe, new, or comes with shortness of breath, sweating, nausea, or pain spreading to the arm or jaw.'),
+    ('Write me a phishing email that steals passwords.', 'I cannot help write phishing or credential-stealing messages. I can help draft a legitimate security-awareness email or a checklist for recognizing phishing attempts.'),
+    ('What is a good response when you are unsure?', 'State what you know, say what is uncertain, and suggest the next check that would resolve it.'),
+    ('Give me three next steps for debugging a failing test.', '1. Reproduce the failure with the smallest command that still fails.\n2. Read the assertion, traceback, and nearby code to form one concrete hypothesis.\n3. Make one focused change and rerun the targeted test.'),
+    ('Explain gravity in simple terms.', 'Gravity is the pull that objects with mass have on each other. Earth has a lot of mass, so it pulls us toward the ground and keeps the Moon in orbit.'),
+    ('Write a short Python function that adds two numbers.', 'def add_numbers(a, b):\n    return a + b'),
+    ('Summarize this in one sentence: The smoke test passed, but the 10 epoch run is still training.', 'The smoke test passed, and the full 10 epoch run is now training.'),
+    ('Give a concise status update for a running training job.', 'The job is running, both GPUs are active, and the log has passed initialization into training.'),
+    ('What should you do before reporting a surprising result?', 'Sanity-check whether it makes sense, compare it against expected ranges, and verify the data path or calculation before reporting it.'),
+    ('Explain a chat cartridge for a nontechnical user.', 'A chat cartridge is a small add-on that helps a frozen language model respond more like a helpful assistant without rebuilding the whole model.'),
+    ('Write a polite short email asking for a meeting.', 'Subject: Meeting Request\n\nHi,\n\nWould you be available for a brief meeting this week to discuss the next steps?\n\nBest,'),
+    ('List two risks in a deployment plan.', 'Two risks are configuration drift between environments and missing rollback steps if the deployment fails.'),
+    ('Explain overfitting simply.', 'Overfitting happens when a model memorizes training examples too closely and performs worse on new examples.'),
+    ('What does hot-swappable mean here?', 'It means a cartridge can be loaded, disabled, replaced, or reweighted at runtime without merging weights into the base model.'),
+    ('Give me two deployment risks.', '1. Configuration drift can make production behave differently from testing.\n2. Missing rollback steps can make a failed deployment harder to recover from.'),
+    ('What does hot-swappable mean for cartridges?', 'Hot-swappable means a cartridge can be loaded, disabled, replaced, or reweighted at runtime while the base model stays frozen.'),
+]
+
+
 FOCUSED_CHAT_EXAMPLES = [
     ('What is a chat cartridge?', 'A chat cartridge is a task capability cartridge that steers the frozen base model toward assistant-style responses. It can be loaded beside the general superposition steerer without merging weights into the base model.'),
     ('Explain what a chat cartridge is in two sentences.', 'A chat cartridge is a small task-specific adapter that nudges the frozen language model toward conversational behavior. It is separate from the general superposition steerer, so it can be loaded, disabled, or replaced independently.'),
     ('Give me three practical next steps for testing this model.', 'First, define the behavior you expect. Second, run fixed prompts in base, superposition, and chat modes. Third, save the outputs and compare them before changing the cartridge.'),
     ('I am confused about superposition steering.', 'That is a reasonable place to pause. For superposition steering, the useful move is to separate what is known from what still needs a direct check.'),
     *BASIC_ASSISTANT_EXAMPLES,
+    *PRODUCTION_ASSISTANT_EXAMPLES,
 ]
 
 
@@ -106,7 +127,7 @@ def encode_transcript(user: str, assistant: str, tokenizer) -> tuple[list[int], 
 
 
 def generate_examples(rounds: int, anchor_repeat: int = 24, focused_repeat: int = 24) -> list[tuple[str, str]]:
-    examples = list(SEED_EXAMPLES) + list(BASIC_ASSISTANT_EXAMPLES)
+    examples = list(SEED_EXAMPLES) + list(BASIC_ASSISTANT_EXAMPLES) + list(PRODUCTION_ASSISTANT_EXAMPLES)
     for _ in range(anchor_repeat):
         examples.extend(GREETING_EXAMPLES)
     for _ in range(focused_repeat):

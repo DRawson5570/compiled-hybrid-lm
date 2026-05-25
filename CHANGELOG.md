@@ -6,6 +6,8 @@
 - Refactored the distributed 3B DeepSeek/ZeroQ trainer to use the backend layer and train a compiled-prior `SuperpositionSteererV3` cartridge surface instead of leaving compiled features unused.
 - Added a memory-safe `--train-surface head_bias` mode plus configurable `--eval-tokens` for large ZeroQ smoke tests on M40 GPUs, while keeping `--train-surface cmi_steerer` available for smaller or future checkpointed runs.
 - Added assistant-EOS supervision and list-aware decoding guards for chat cartridges so generated answers stop cleanly without truncating numbered lists.
+- Added a scored assistant evaluation harness covering conversation, project knowledge, safety, writing, workflows, calibration, coding, math, and basic science behaviors.
+- Expanded the chat curriculum with repeated production-assistant examples and trained a `production_v2_b384` chat cartridge that passes the expanded 16-task assistant gate.
 - Added tests proving the ZeroQ backend contract with a fake coordinator and verifying the explicit DeepSeek backbone still exposes the cartridge hook ABI.
 - Added a `4b` DeepSeek distributed-trainer config and routed Maxwell/M40 ZeroQ coordination through CPU/Gloo for unsupported CUDA/NCCL collectives.
 - Routed small trainable-surface gradient averaging through the backend's Gloo process group on Maxwell, allowing a steering-enabled 4B ZeroQ smoke to complete forward, backward, eval, and save on pe2.

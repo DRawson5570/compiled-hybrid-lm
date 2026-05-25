@@ -158,6 +158,8 @@ def answer_can_stop(text: str, required_items: int = 0) -> bool:
 def sample_next(logits: torch.Tensor, temperature: float, top_k: int, top_p: float,
                 generated: list[int] | None = None, repetition_penalty: float = 1.0) -> int:
     logits = apply_repetition_penalty(logits, generated or [], repetition_penalty)
+    if temperature <= 0:
+        return int(torch.argmax(logits).item())
     logits = logits.float() / max(temperature, 1e-5)
     if top_k > 0:
         values, _ = torch.topk(logits, min(top_k, logits.numel()))
@@ -298,7 +300,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--base-model', default='artifacts/steerer_v4/steerer_best_b.pt')
     parser.add_argument('--general-steerer', default='artifacts/steerer_v4/steerer_best_b.pt')
-    parser.add_argument('--chat-cartridge', default='artifacts/steerer_chat_adapter_seed_v4/chat_cartridge.pt')
+    parser.add_argument('--chat-cartridge', default='artifacts/steerer_chat_production_v2_b384/chat_cartridge.pt')
     parser.add_argument('--device', default='cuda')
     parser.add_argument('--mode', choices=['base', 'superposition', 'chat'], default='chat')
     parser.add_argument('--prompt', action='append')
