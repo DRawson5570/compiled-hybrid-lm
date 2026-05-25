@@ -81,3 +81,11 @@ To reproduce: a Linux machine with one or two GPUs, Python 3.10+, and the depend
 The gap between "frontier" and "accessible" is not a hardware gap. It is a methodology gap. The industry standard — pure SGD on massive clusters — is path-dependent, not optimal. Compiled priors close the gap by injecting the statistical structure that SGD would otherwise spend billions of tokens discovering.
 
 You can train a 4.7B parameter transformer from scratch on two decade-old GPUs in 20 days. You can publish the model, the code, and the weights. You can do it for the cost of dinner at a nice restaurant. The only barrier is believing it's possible.
+
+### On Data Size: A Deliberate Stress Test
+
+Conventional wisdom says WikiText-103 (119M training tokens) is far too small for a 4.7B parameter model. A pure-SGD model this size would memorize the training set in a few hundred steps and never generalize.
+
+We chose WikiText deliberately. If the model converges despite the "impossible" data constraint, it proves the compiled priors are providing real statistical signal — not just accelerating convergence on abundant data, but replacing the need for it entirely. A positive result on this dataset is stronger evidence for compiled priors than any result on C4 or The Pile would be.
+
+If it doesn't converge, we switch to C4 — a one-line data path change. Either outcome teaches us something.
