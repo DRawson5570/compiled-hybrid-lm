@@ -73,6 +73,7 @@ def main() -> int:
     baked.add_argument("--lora-r", type=int, default=16)
     baked.add_argument("--lora-alpha", type=int, default=32)
     baked.add_argument("--lora-dropout", type=float, default=0.05)
+    baked.add_argument("--final-eval-limit", type=int, help="Limit final generation eval rows for fast smoke runs. Defaults to all rows.")
 
     args = parser.parse_args()
     if args.command == "private-facts":
@@ -227,6 +228,7 @@ def main() -> int:
             lora_r=args.lora_r,
             lora_alpha=args.lora_alpha,
             lora_dropout=args.lora_dropout,
+            final_eval_limit=args.final_eval_limit,
         )
         print(json.dumps({k: v for k, v in report.items() if k != "final_rows"}, indent=2), flush=True)
     return 0

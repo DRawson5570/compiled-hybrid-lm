@@ -329,7 +329,7 @@ class CartridgeManifest:
 
 ### SteererCartridgeRack
 
-Multiple steerers can be mounted simultaneously and composed additively:
+Multiple steerers can be mounted simultaneously. For general steerers or deliberately blended domains, they can be composed additively. For task cartridges, the validated production mode is gated activation: mount every cartridge, let the router select the compatible cartridge for the prompt, activate only that cartridge, and then run the rack in `chain` mode.
 
 ```python
 rack = SteererCartridgeRack()
@@ -347,6 +347,25 @@ The rack registers one hook per target layer. For each active steerer, it comput
 ### Hot-Swap
 
 Cartridges can be loaded, unloaded, and composed at runtime without restarting the model. A single frozen C4 base model can serve Wikipedia, code, chat, or any trained domain by swapping a 70KB file.
+
+### Qwen Learned-Router Validation
+
+The Qwen cartridge rack has two validated deployment tracks as of 2026-05-25:
+
+| Track | Runtime shape | What trains | Runtime router? | Validation |
+|---|---|---|---|---|
+| Loadable cartridge rack | Frozen `Qwen/Qwen2.5-1.5B` + mounted adapter cartridges | Individual cartridges plus a small learned router head | Yes | pe3 `learned_router_gated_chain_eval.json`: private_facts 53/60; arithmetic, code_labels, safety_labels, instruction_format 100%; no saved-score regressions |
+| Baked native LoRA | Frozen `Qwen/Qwen2.5-1.5B` + native LoRA adapter | LoRA matrices only; base weights frozen | No | pe3 `baked_lora_native_300`: eval_loss 4.1611 -> 0.0739; bounded generation eval 34/40, heldout 3/4 |
+
+The loadable rack uses a learned router, not keyword routing. The router artifact type is `qwen_embedding_linear_v1`: frozen Qwen embeds the prompt by mean-pooling the final hidden state, and a trained linear head selects from the mounted cartridge IDs. The router is a control-plane module; it does not modify Qwen weights. At generation time the runtime uses:
+
+```
+prompt -> frozen Qwen embedding -> learned router head -> activate selected cartridge -> gated-chain generation
+```
+
+This gating is required for safe composition. Naive all-active composition was tested and is unsafe for task cartridges; it caused severe interference, including private-fact collapse to 0/60. The deterministic prompt router remains only as a fallback/proof harness. Product evaluation should use the learned router artifact at `learned_router/qwen_learned_router.pt`.
+
+The baked native-LoRA track is separate. It distills the suite behavior into one reloadable adapter artifact, saved as `adapter.pt` plus `adapter_config.json`, and can be loaded with `QwenBakedLoraRunner.from_adapter(...)`. This path removes the runtime router, but it also removes cartridge-level hot-swapping, selective activation, and per-cartridge introspection. It is a deployment/packaging path, not a replacement for the modular router architecture.
 
 ---
 

@@ -268,6 +268,90 @@ python3 chat_cartridge.py --mode chat \
   --chat-cartridge artifacts/steerer_chat/chat_cartridge.pt
 ```
 
+### Qwen Cartridge Rack: Learned Router Track
+
+Use this track when cartridges must remain modular, hot-swappable, auditable, and independently replaceable. Qwen stays frozen. The individual adapter cartridges are mounted into a rack, and a learned control-plane router selects which cartridge is active for each prompt.
+
+This is not keyword routing. The validated router artifact is `qwen_embedding_linear_v1`: frozen Qwen embeds each prompt, then a trained linear head selects one of the mounted cartridge IDs. The deterministic prompt router is only a fallback/proof harness.
+
+```bash
+cd ~/deepseek_experiments
+
+# Train or rebuild the learned router from frozen-Qwen prompt embeddings.
+CUDA_VISIBLE_DEVICES=0 ~/local_venvs/m40_env/bin/python -m hybrid.cartridge_harness.cli train-router \
+  --model Qwen/Qwen2.5-1.5B \
+  --device cuda \
+  --out-dir artifacts/qwen_cartridge_rack_full_20260525_171513/learned_router \
+  --epochs 300 \
+  --lr 0.003
+
+# Evaluate all mounted cartridges through the learned router and gated-chain runtime.
+CUDA_VISIBLE_DEVICES=0 ~/local_venvs/m40_env/bin/python -m hybrid.cartridge_harness.cli eval-loaded-rack \
+  --model Qwen/Qwen2.5-1.5B \
+  --device cuda \
+  --out-dir artifacts/qwen_cartridge_rack_full_20260525_171513 \
+  --router-path artifacts/qwen_cartridge_rack_full_20260525_171513/learned_router/qwen_learned_router.pt \
+  --composition-mode gated-chain \
+  --report artifacts/qwen_cartridge_rack_full_20260525_171513/learned_router_gated_chain_eval.json
+```
+
+Expected validated pe3 result for the current rack:
+
+| Suite | Result |
+|---|---:|
+| private_facts | 53/60 |
+| arithmetic | 32/32 |
+| code_labels | 24/24 |
+| safety_labels | 24/24 |
+| instruction_format | 24/24 |
+
+All suites should report `saved_score_regression=false`. If a task cartridge rack regresses under all-active composition, do not treat that as a rack failure; all-active task composition is a known unsafe diagnostic mode. Use `--composition-mode gated-chain` with the learned router for product evaluation.
+
+### Qwen Baked Adapter: Native LoRA Track
+
+Use this track when deployment wants one fused adapter and does not need runtime cartridge selection. Qwen base weights still remain frozen, but native LoRA matrices are trained inside the model and saved as a reloadable adapter artifact.
+
+This path avoids PEFT/bitsandbytes on pe3. The pe3 environment has broken PEFT/bitsandbytes Triton imports for this use case, so the harness uses native LoRA wrappers and saves `adapter.pt` plus `adapter_config.json`.
+
+```bash
+cd ~/deepseek_experiments
+
+CUDA_VISIBLE_DEVICES=0 ~/local_venvs/m40_env/bin/python -m hybrid.cartridge_harness.cli train-baked-lora \
+  --model Qwen/Qwen2.5-1.5B \
+  --device cuda \
+  --out-dir artifacts/qwen_cartridge_rack_full_20260525_171513/baked_lora_native_300 \
+  --steps 300 \
+  --eval-every 50 \
+  --lr 0.0002 \
+  --lora-r 16 \
+  --lora-alpha 32 \
+  --lora-dropout 0.05 \
+  --final-eval-limit 40
+```
+
+Expected validated pe3 result for the current baked artifact:
+
+| Metric | Value |
+|---|---:|
+| Final eval loss | 0.0739 |
+| Bounded generation eval | 34/40 |
+| Heldout in bounded eval | 3/4 |
+| Best adapter | `artifacts/qwen_cartridge_rack_full_20260525_171513/baked_lora_native_300/best_adapter` |
+
+Reload a baked adapter for inference:
+
+```python
+from hybrid.cartridge_harness.qwen import QwenBakedLoraRunner
+
+runner = QwenBakedLoraRunner.from_adapter(
+    "artifacts/qwen_cartridge_rack_full_20260525_171513/baked_lora_native_300/best_adapter",
+    device="cuda",
+)
+print(runner.generate("Project Atlas access code:", max_tokens=8))
+```
+
+On pe3, this reload smoke loaded 196 native LoRA modules and generated `LUMEN-506` from the saved artifact.
+
 ---
 
 ## 9. ZeroQ Distributed Training
@@ -400,6 +484,15 @@ Features: temperature, top-p, top-k, repetition penalty, stop markers, n-gram re
 |-----------|--------|
 | WikiText | 28.3 |
 | Published | huggingface.co/draw5570/compiled-hybrid-lm |
+
+### Qwen Cartridge Tracks (pe3, 2026-05-25)
+
+| Track | Artifact | Result |
+|---|---|---|
+| Learned router + gated rack | `artifacts/qwen_cartridge_rack_full_20260525_171513/learned_router/qwen_learned_router.pt` | private_facts 53/60; all other suites 100%; no saved-score regressions |
+| Baked native LoRA | `artifacts/qwen_cartridge_rack_full_20260525_171513/baked_lora_native_300/best_adapter` | eval_loss 0.0739; bounded generation eval 34/40; heldout 3/4 |
+
+The learned-router track is the modular cartridge architecture. The baked native-LoRA track is a fused deployment artifact. Both were tested; choose based on whether runtime cartridge control is required.
 
 ---
 

@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+import torch
+import torch.nn as nn
+
 from hybrid.cartridge_harness.core import (
     TaskExample,
     build_summary,
@@ -451,6 +454,8 @@ def _router_accuracy(head, embeddings, labels, device) -> float:
 class QwenBakedLoraRunner:
     """Qwen plus a trainable LoRA adapter that bakes suite behavior into the model."""
 
+    TARGET_SUFFIXES = ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj")
+
     def __init__(
         self,
         model_name: str,
@@ -461,32 +466,35 @@ class QwenBakedLoraRunner:
         lora_dropout: float = 0.05,
     ):
         import torch
-        from peft import LoraConfig, TaskType, get_peft_model
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         self.torch = torch
         self.device = torch.device(device)
         self.model_name = model_name
+        self.lora_r = lora_r
+        self.lora_alpha = lora_alpha
+        self.lora_dropout = lora_dropout
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
         if self.tokenizer.pad_token_id is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
-        base = AutoModelForCausalLM.from_pretrained(
+        self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float16 if self.device.type == "cuda" else torch.float32,
             trust_remote_code=True,
         ).to(self.device)
-        config = LoraConfig(
-            task_type=TaskType.CAUSAL_LM,
+        for param in self.model.parameters():
+            param.requires_grad = False
+        self.lora_modules = _install_native_lora(
+            self.model,
+            target_suffixes=self.TARGET_SUFFIXES,
             r=lora_r,
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
-            target_modules=("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"),
-            bias="none",
+            alpha=lora_alpha,
+            dropout=lora_dropout,
+            device=self.device,
         )
-        self.model = get_peft_model(base, config)
+        if not self.lora_modules:
+            raise ValueError("no Qwen linear modules matched native LoRA targets")
         self.model.train()
-        if hasattr(self.model, "enable_input_require_grads"):
-            self.model.enable_input_require_grads()
 
     def generate(self, prompt: str, max_tokens: int = 24) -> str:
         ids = list(self.tokenizer.encode(prompt))
@@ -506,8 +514,53 @@ class QwenBakedLoraRunner:
         return self.tokenizer.decode(generated, skip_special_tokens=True).strip()
 
     def save_adapter(self, out_dir: Path):
-        self.model.save_pretrained(out_dir / "adapter")
-        self.tokenizer.save_pretrained(out_dir / "adapter")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        self.torch.save(_native_lora_state(self.lora_modules), out_dir / "adapter.pt")
+        (out_dir / "adapter_config.json").write_text(
+            json.dumps(
+                {
+                    "adapter_type": "native_lora_v1",
+                    "model": self.model_name,
+                    "lora_r": self.lora_r,
+                    "lora_alpha": self.lora_alpha,
+                    "lora_dropout": self.lora_dropout,
+                    "target_suffixes": list(self.TARGET_SUFFIXES),
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        self.tokenizer.save_pretrained(out_dir)
+
+    def load_adapter(self, adapter_dir: str | Path):
+        adapter_path = Path(adapter_dir)
+        if adapter_path.is_dir():
+            adapter_path = adapter_path / "adapter.pt"
+        state = self.torch.load(adapter_path, map_location=self.device)
+        _load_native_lora_state(self.lora_modules, state)
+        self.model.eval()
+
+    @classmethod
+    def from_adapter(
+        cls,
+        adapter_dir: str | Path,
+        device: str = "cuda",
+        *,
+        model_name: str | None = None,
+    ) -> "QwenBakedLoraRunner":
+        adapter_dir = Path(adapter_dir)
+        config = json.loads((adapter_dir / "adapter_config.json").read_text(encoding="utf-8"))
+        if config.get("adapter_type") != "native_lora_v1":
+            raise ValueError(f"unsupported baked LoRA adapter type: {config.get('adapter_type')}")
+        runner = cls(
+            model_name or config["model"],
+            device,
+            lora_r=int(config["lora_r"]),
+            lora_alpha=int(config["lora_alpha"]),
+            lora_dropout=float(config.get("lora_dropout", 0.0)),
+        )
+        runner.load_adapter(adapter_dir)
+        return runner
 
 
 def train_qwen_baked_lora(
@@ -521,6 +574,7 @@ def train_qwen_baked_lora(
     lora_r: int = 16,
     lora_alpha: int = 32,
     lora_dropout: float = 0.05,
+    final_eval_limit: int | None = None,
     seed: int = 23,
 ) -> dict:
     """Train a LoRA adapter that bakes router/cartridge suite behavior into Qwen."""
@@ -551,55 +605,38 @@ def train_qwen_baked_lora(
         weight_decay=0.0,
     )
     history: list[dict] = []
-    best_key = (-1, -1)
+    best_eval_loss = float("inf")
     best_adapter_dir = output_dir / "best_adapter"
 
     for step in range(1, steps + 1):
         runner.model.train()
         row = random.choice(train_tasks)
-        prompt_ids = runner.tokenizer.encode(row.prompt)
-        full_ids = runner.tokenizer.encode(f"{row.prompt} {row.expected}\n")
-        x = torch.tensor([full_ids[:-1]], device=runner.device)
-        y = torch.tensor([full_ids[1:]], device=runner.device)
-        mask = torch.zeros_like(y, dtype=torch.float32)
-        mask[:, max(0, len(prompt_ids) - 1):] = 1.0
-        logits = runner.model(x).logits.float()
-        loss_tokens = F.cross_entropy(
-            logits.reshape(-1, logits.shape[-1]),
-            y.reshape(-1),
-            reduction="none",
-        ).reshape_as(mask)
-        loss = (loss_tokens * mask).sum() / mask.sum().clamp(min=1.0)
+        loss = _baked_lora_task_loss(runner, row, F)
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(runner.model.parameters(), 1.0)
         optimizer.step()
 
         if step == 1 or step % eval_every == 0 or step == steps:
-            rows = evaluate_text_runner(eval_tasks, runner.generate)
-            summary = build_summary(rows)
-            split = summary.by_split
-            key = (split.get("heldout", {}).get("correct", 0), summary.correct)
-            item = {"step": step, "loss": float(loss.detach().cpu()), **summary.to_json()}
+            eval_loss = _baked_lora_mean_loss(runner, eval_tasks, F)
+            item = {
+                "step": step,
+                "train_loss": float(loss.detach().cpu()),
+                "eval_loss": eval_loss,
+            }
             history.append(item)
             print(
-                f"[baked-lora] step={step} loss={item['loss']:.4f} "
-                f"correct={summary.correct}/{summary.total} heldout="
-                f"{split.get('heldout', {}).get('correct', 0)}/"
-                f"{split.get('heldout', {}).get('total', 0)}",
+                f"[baked-lora] step={step} train_loss={item['train_loss']:.4f} "
+                f"eval_loss={eval_loss:.4f}",
                 flush=True,
             )
-            if key > best_key:
-                best_key = key
-                runner.model.save_pretrained(best_adapter_dir)
-                runner.tokenizer.save_pretrained(best_adapter_dir)
-            if summary.correct == summary.total:
-                print(f"[baked-lora] early_stop step={step} perfect_eval=1", flush=True)
-                break
+            if eval_loss < best_eval_loss:
+                best_eval_loss = eval_loss
+                runner.save_adapter(best_adapter_dir)
 
-    runner.model.save_pretrained(output_dir / "adapter_last")
-    runner.tokenizer.save_pretrained(output_dir / "adapter_last")
-    final_rows = evaluate_text_runner(eval_tasks, runner.generate)
+    runner.save_adapter(output_dir / "adapter_last")
+    final_eval_tasks = eval_tasks[:final_eval_limit] if final_eval_limit is not None else eval_tasks
+    final_rows = evaluate_text_runner(final_eval_tasks, runner.generate)
     final_summary = build_summary(final_rows)
     result = {
         "model": model_name,
@@ -610,12 +647,111 @@ def train_qwen_baked_lora(
         "lora_dropout": lora_dropout,
         "train_count": len(train_tasks),
         "eval_count": len(eval_tasks),
+        "final_eval_limit": final_eval_limit,
+        "final_eval_count": len(final_eval_tasks),
         "history": history,
         "final_summary": final_summary.to_json(),
         "final_rows": [row.to_json() for row in final_rows],
     }
     (output_dir / "baked_lora_report.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     return result
+
+
+def _baked_lora_task_loss(runner: QwenBakedLoraRunner, row: TaskExample, functional) -> torch.Tensor:
+    prompt_ids = runner.tokenizer.encode(row.prompt)
+    full_ids = runner.tokenizer.encode(f"{row.prompt} {row.expected}\n")
+    x = runner.torch.tensor([full_ids[:-1]], device=runner.device)
+    y = runner.torch.tensor([full_ids[1:]], device=runner.device)
+    mask = runner.torch.zeros_like(y, dtype=runner.torch.float32)
+    mask[:, max(0, len(prompt_ids) - 1):] = 1.0
+    logits = runner.model(x).logits.float()
+    loss_tokens = functional.cross_entropy(
+        logits.reshape(-1, logits.shape[-1]),
+        y.reshape(-1),
+        reduction="none",
+    ).reshape_as(mask)
+    return (loss_tokens * mask).sum() / mask.sum().clamp(min=1.0)
+
+
+def _baked_lora_mean_loss(runner: QwenBakedLoraRunner, tasks: list[TaskExample], functional) -> float:
+    runner.model.eval()
+    total = 0.0
+    with runner.torch.no_grad():
+        for row in tasks:
+            total += float(_baked_lora_task_loss(runner, row, functional).detach().cpu())
+    return total / max(len(tasks), 1)
+
+
+class _NativeLoRALinear(nn.Module):
+    def __init__(self, base: nn.Linear, *, r: int, alpha: int, dropout: float, device):
+        super().__init__()
+        self.base = base
+        self.r = int(r)
+        self.alpha = int(alpha)
+        self.scaling = float(alpha) / float(r)
+        self.dropout = nn.Dropout(dropout)
+        self.lora_a = nn.Linear(base.in_features, r, bias=False, dtype=torch.float32, device=device)
+        self.lora_b = nn.Linear(r, base.out_features, bias=False, dtype=torch.float32, device=device)
+        nn.init.kaiming_uniform_(self.lora_a.weight, a=5 ** 0.5)
+        nn.init.zeros_(self.lora_b.weight)
+        for param in self.base.parameters():
+            param.requires_grad = False
+
+    def forward(self, x):
+        result = self.base(x)
+        delta = self.lora_b(self.lora_a(self.dropout(x.float()))) * self.scaling
+        return result + delta.to(dtype=result.dtype)
+
+
+def _install_native_lora(model: nn.Module, *, target_suffixes: tuple[str, ...], r: int, alpha: int, dropout: float, device) -> dict[str, _NativeLoRALinear]:
+    modules: dict[str, _NativeLoRALinear] = {}
+    for name, module in list(model.named_modules()):
+        if not isinstance(module, nn.Linear):
+            continue
+        if not any(name.endswith(suffix) for suffix in target_suffixes):
+            continue
+        parent, child_name = _parent_module(model, name)
+        wrapped = _NativeLoRALinear(module, r=r, alpha=alpha, dropout=dropout, device=device)
+        setattr(parent, child_name, wrapped)
+        modules[name] = wrapped
+    return modules
+
+
+def _parent_module(model: nn.Module, module_name: str) -> tuple[nn.Module, str]:
+    parts = module_name.split(".")
+    parent = model
+    for part in parts[:-1]:
+        parent = getattr(parent, part)
+    return parent, parts[-1]
+
+
+def _native_lora_state(modules: dict[str, _NativeLoRALinear]) -> dict:
+    return {
+        name: {
+            "r": module.r,
+            "alpha": module.alpha,
+            "lora_a": module.lora_a.state_dict(),
+            "lora_b": module.lora_b.state_dict(),
+        }
+        for name, module in modules.items()
+    }
+
+
+def _load_native_lora_state(modules: dict[str, _NativeLoRALinear], state: dict):
+    missing = set(modules) - set(state)
+    extra = set(state) - set(modules)
+    if missing or extra:
+        raise ValueError(f"native LoRA state mismatch: missing={sorted(missing)} extra={sorted(extra)}")
+    for name, module_state in state.items():
+        module = modules[name]
+        if int(module_state["r"]) != module.r or int(module_state["alpha"]) != module.alpha:
+            raise ValueError(
+                f"native LoRA shape mismatch for {name}: "
+                f"artifact r={module_state['r']} alpha={module_state['alpha']} "
+                f"runner r={module.r} alpha={module.alpha}"
+            )
+        module.lora_a.load_state_dict(module_state["lora_a"])
+        module.lora_b.load_state_dict(module_state["lora_b"])
 
 
 class QwenAdapterCartridgeRunner:

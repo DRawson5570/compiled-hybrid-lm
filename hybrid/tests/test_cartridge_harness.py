@@ -23,6 +23,9 @@ from hybrid.cartridge_harness.qwen import (
     CartridgeRouteDecision,
     QwenLearnedCartridgeRouter,
     QwenPromptRouter,
+    _install_native_lora,
+    _load_native_lora_state,
+    _native_lora_state,
     build_qwen_adapter_steerer_from_checkpoint,
     load_qwen_adapter_cartridge,
     train_qwen_baked_lora,
@@ -309,6 +312,28 @@ def test_gated_chain_cli_mode_is_explicit_default():
 
 def test_baked_lora_training_entrypoint_is_available():
     assert callable(train_qwen_baked_lora)
+
+
+class _TinyNativeLoraTarget(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.q_proj = nn.Linear(3, 2, bias=False)
+
+
+def test_native_lora_state_round_trips_between_models():
+    first = _TinyNativeLoraTarget()
+    second = _TinyNativeLoraTarget()
+    second.load_state_dict(first.state_dict())
+    first_modules = _install_native_lora(first, target_suffixes=("q_proj",), r=2, alpha=4, dropout=0.0, device=torch.device("cpu"))
+    second_modules = _install_native_lora(second, target_suffixes=("q_proj",), r=2, alpha=4, dropout=0.0, device=torch.device("cpu"))
+    with torch.no_grad():
+        first_modules["q_proj"].lora_a.weight.fill_(0.25)
+        first_modules["q_proj"].lora_b.weight.fill_(0.5)
+
+    _load_native_lora_state(second_modules, _native_lora_state(first_modules))
+
+    x = torch.ones(1, 3)
+    assert torch.allclose(first.q_proj(x), second.q_proj(x), atol=1e-6)
 
 
 class _ConstantDeltaSteerer(nn.Module):
