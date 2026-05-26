@@ -90,11 +90,27 @@ def render_continuation(ending_text: str) -> str:
 
 
 def score_ending_logprob(
-    model, tokenizer, prompt: str, continuation: str, device: torch.device
+    model, tokenizer, ctx: str, ending: str, device: torch.device
 ) -> tuple[float, float, int]:
-    from hybrid.benchmarks.arc_scoring import HFArcScorer
-    scorer = HFArcScorer(model, tokenizer, device)
-    return scorer._score_continuation(prompt, continuation)
+    full_text = f"{ctx} {ending}"
+    full_ids = tokenizer.encode(full_text, return_tensors="pt").to(device)
+    ctx_ids = tokenizer.encode(ctx, return_tensors="pt")
+    answer_len = full_ids.shape[1] - ctx_ids.shape[1]
+    if answer_len <= 0:
+        return float("-inf"), float("-inf"), 0
+
+    with torch.no_grad():
+        logits = model(full_ids).logits.float()
+        logprobs = torch.nn.functional.log_softmax(logits, dim=-1)
+
+    total_logprob = 0.0
+    for j in range(answer_len):
+        pos = ctx_ids.shape[1] + j - 1
+        token_id = full_ids[0, pos + 1].item()
+        total_logprob += logprobs[0, pos, token_id].item()
+
+    score_norm = total_logprob / max(answer_len, 1)
+    return score_norm, total_logprob, answer_len
 
 
 def run_hellaswag_baseline(
@@ -124,8 +140,7 @@ def run_hellaswag_baseline(
         prompt = render_prompt(ex)
         scores = []
         for ending in ex.endings[:4]:
-            cont = render_continuation(ending)
-            norm, total_score, n_tokens = score_ending_logprob(model, tokenizer, prompt, cont, torch_device)
+            norm, total_score, n_tokens = score_ending_logprob(model, tokenizer, ex.ctx, ending, torch_device)
             scores.append({"norm": norm, "sum": total_score, "num_tokens": n_tokens})
 
         pred_norm = max(range(len(scores)), key=lambda j: scores[j]["norm"])
