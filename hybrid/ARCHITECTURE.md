@@ -385,6 +385,20 @@ prompt -> frozen Qwen embedding -> learned router head -> activate selected cart
 
 This gating is required for safe composition. Naive all-active composition was tested and is unsafe for task cartridges; it caused severe interference, including private-fact collapse to 0/60. The deterministic prompt router remains only as a fallback/proof harness. Product evaluation should use the learned router artifact at `learned_router/qwen_learned_router.pt`.
 
+### Composition Mode Comparison (2026-05-26)
+
+Validated on ARC-Challenge with 6-cartridge rack (5 suites + ARC):
+
+| Mode | Accuracy | Description |
+|---|---:|---|
+| **gated-chain** (single, routed) | **77.26%** | Router selects one cartridge, chain applies it. Production mode. |
+| mean (all 6 active) | 71.0% | Average all cartridge deltas. Router-free, +11pp over raw but -6pp vs gated-chain. |
+| additive (all 6 active) | 36.0% | Sum all deltas. Unrelated cartridges drown expert signal. Unsafe. |
+
+Mean mode is a viable router-free deployment path: no learned router needed, no routing decisions, just mount all cartridges and average their deltas. The 6pp gap vs gated-chain is the price of eliminating the routing control plane. Mean mode works because untrained cartridges produce near-zero deltas for out-of-domain prompts, so the average preserves signal from the relevant expert.
+
+Additive mode is unsafe because cartridge deltas are magnitude-normalized independently: five near-zero deltas plus one strong delta sum to approximately the strong delta scaled by 1/6 after RMS renormalization, losing most of the expert signal.
+
 The rack was also re-tested one suite at a time through the trained router with `--composition-mode gated-chain`, `--skip-baseline`, and `--max-tokens 8`. The reports live under `learned_router_one_by_one/` and confirm the router selects the expected cartridge for each suite: private_facts 53/60, arithmetic 32/32, code_labels 24/24, safety_labels 24/24, instruction_format 24/24, all with `saved_score_regression=false`.
 
 The baked native-LoRA track is separate. It distills the suite behavior into one reloadable adapter artifact, saved as `adapter.pt` plus `adapter_config.json`, and can be loaded with `QwenBakedLoraRunner.from_adapter(...)`. This path removes the runtime router, but it also removes cartridge-level hot-swapping, selective activation, and per-cartridge introspection. It is a deployment/packaging path, not a replacement for the modular router architecture.
