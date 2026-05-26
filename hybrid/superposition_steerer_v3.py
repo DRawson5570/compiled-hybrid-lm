@@ -63,6 +63,15 @@ class SuperpositionSteererV3(nn.Module):
             str(layer): nn.Parameter(torch.tensor(0.01)) for layer in self.inject_layers
         })
 
+        # Tiny model-specific steering controls. These are safe to overfit on a
+        # calibration batch, then freeze before neural training.
+        self.alpha = nn.Parameter(torch.tensor(1.0))
+        self.betas = nn.ParameterDict({
+            'local': nn.Parameter(torch.tensor(1.0)),
+            'mid': nn.Parameter(torch.tensor(1.0)),
+            'global': nn.Parameter(torch.tensor(1.0)),
+        })
+
         self._current_weights: torch.Tensor | None = None
         self._hooks = []
 
@@ -119,8 +128,16 @@ class SuperpositionSteererV3(nn.Module):
         o_rms = offset_float.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp(min=1e-8)
         normalized_offset = offset_float * (h_rms / o_rms)
 
+        alpha = self.alpha.abs()
+        beta = self.betas[group].abs()
         gamma = self.gammas[str(layer_idx)].abs()
-        return h + (gamma.float() * normalized_offset).to(dtype=h.dtype)
+        scale = alpha.float() * beta.float() * gamma.float()
+        return h + (scale * normalized_offset).to(dtype=h.dtype)
+
+    def steering_control_parameters(self):
+        yield self.alpha
+        yield from self.betas.parameters()
+        yield from self.gammas.parameters()
 
     def register_hooks(self, model) -> int:
         self.remove_hooks()

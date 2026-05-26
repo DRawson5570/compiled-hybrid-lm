@@ -310,6 +310,15 @@ def _early_stop_metric_improved(status, metric):
     raise ValueError(f"unknown early-stop metric: {metric}")
 
 
+def _format_saved_status(status):
+    saved = []
+    if "s" in status:
+        saved.append("on")
+    if "b" in status:
+        saved.append("off")
+    return ",".join(saved) if saved else "-"
+
+
 def _manual_allreduce_grads(model, world_size, process_group=None):
     allreduce_trainable_grads(model, world_size, process_group=process_group)
 
@@ -359,6 +368,82 @@ def _set_requires_grad(params, enabled):
         param.requires_grad = enabled
 
 
+def _trainable_params(params):
+    return [param for param in params if param.requires_grad]
+
+
+def _steerer_control_parameters(steerer):
+    if steerer is None:
+        return []
+    if hasattr(steerer, 'steering_control_parameters'):
+        return list(steerer.steering_control_parameters())
+    return list(getattr(steerer, 'gammas', {}).parameters())
+
+
+def _freeze_except(params_to_keep_trainable, all_params):
+    keep_ids = {id(param) for param in params_to_keep_trainable}
+    for param in all_params:
+        param.requires_grad = id(param) in keep_ids
+
+
+def _load_steerer_state(steerer, state, rank, label):
+    load_result = steerer.load_state_dict(state, strict=False)
+    missing = [key for key in load_result.missing_keys if key.startswith(('alpha', 'betas'))]
+    unexpected = list(load_result.unexpected_keys)
+    if missing and len(missing) != len(load_result.missing_keys):
+        _rank0_print(rank, f"[{label}] steerer loaded with non-control missing keys={load_result.missing_keys}")
+    if unexpected:
+        _rank0_print(rank, f"[{label}] steerer loaded with unexpected keys={unexpected}")
+
+
+def _set_steerer_batch_weights(steerer, gpu_fc, x, w_cpu, device):
+    w_gpu = gpu_fc.compute_features(x)
+    w_gpu[:, :, 0:9] = w_cpu[:, :, :9].to(device)
+    steerer.set_weights(w_gpu)
+
+
+def _run_steering_control_calibration(model, steerer, gpu_fc, batch, args, rank, world_size, handle, device):
+    if steerer is None:
+        raise ValueError("--calibrate-steering-controls requires a CMI steerer train surface")
+    control_params = _steerer_control_parameters(steerer)
+    if not control_params:
+        raise ValueError("steerer exposes no alpha/beta/gamma control parameters")
+
+    model_params = list(model.parameters())
+    model_requires_grad = [param.requires_grad for param in model_params]
+    steerer_params = list(steerer.parameters())
+    steerer_requires_grad = [param.requires_grad for param in steerer_params]
+    _set_requires_grad(model_params, False)
+    _freeze_except(control_params, steerer_params)
+
+    x, y, w_cpu = batch
+    x = x.to(device, non_blocking=True)
+    y = y.to(device, non_blocking=True)
+    w_cpu = w_cpu.to(device, non_blocking=True)
+    opt = torch.optim.AdamW(control_params, lr=args.steering_control_lr)
+    steerer.train()
+    model.train()
+    last_loss = None
+    t0 = time.time()
+    for step in range(1, args.steering_control_steps + 1):
+        _set_steerer_batch_weights(steerer, gpu_fc, x, w_cpu, device)
+        out = model(x)
+        loss = F.cross_entropy(out.logits.reshape(-1, V), y.reshape(-1))
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        _manual_allreduce_grads(steerer, world_size, handle.grad_process_group)
+        opt.step()
+        last_loss = loss.item()
+        if step == 1 or step == args.steering_control_steps or step % max(1, args.steering_control_log_interval) == 0:
+            _rank0_print(rank, f"[control-cal] step={step}/{args.steering_control_steps} loss={last_loss:.4f} ppl={math.exp(last_loss):.1f}")
+
+    for param, enabled in zip(model_params, model_requires_grad):
+        param.requires_grad = enabled
+    for param, enabled in zip(steerer_params, steerer_requires_grad):
+        param.requires_grad = enabled
+    _rank0_print(rank, f"[control-cal] done in {time.time()-t0:.0f}s; alpha/beta/gamma controls solved on one batch")
+
+
 def _steerer_on_under_ppl(eval_steerer_on, max_ppl):
     return math.isfinite(eval_steerer_on) and eval_steerer_on <= max_ppl
 
@@ -372,6 +457,16 @@ def _resume_epoch_counters(ckpt):
     warmup_epoch = int(ckpt.get('warmup_epoch', 0 if neural_training_enabled else legacy_epoch) or 0)
     total_epoch = int(ckpt.get('total_epoch', main_epoch + warmup_epoch) or 0)
     return main_epoch, warmup_epoch, total_epoch, neural_training_enabled
+
+
+def _extract_steerer_state(ckpt):
+    if ckpt is None:
+        return None
+    if isinstance(ckpt, dict) and ckpt.get('steerer_state') is not None:
+        return ckpt['steerer_state']
+    if isinstance(ckpt, dict) and any(str(key).startswith(('steer_', 'local_mlp', 'mid_mlp', 'global_mlp', 'gammas')) for key in ckpt):
+        return ckpt
+    return None
 
 
 def load_priors(device):
@@ -404,6 +499,10 @@ def main():
                    help="Convert frozen ZeroQ Linear layers to native bitsandbytes Linear4bit after partitioning")
     p.add_argument("--resume-checkpoint", default=None,
                    help="Resume model and steerer weights from a previous train_4b_distributed best.pt")
+    p.add_argument("--init-steerer-checkpoint", default=None,
+                   help="Load only the steerer/cartridge state from a checkpoint or steerer state_dict; do not resume model weights or epoch counters.")
+    p.add_argument("--freeze-steerer", action="store_true",
+                   help="Keep the steerer/cartridge active but freeze its parameters. Use with --init-steerer-checkpoint for reusable calibrated cartridges.")
     p.add_argument("--data-mode", choices=["wikitext", "c4-mix"], default="wikitext")
     p.add_argument("--data-dir", default="~/deepseek_experiments/artifacts/wikitext_gpt2",
                    help="Directory containing train_ids.pt and validation_ids.pt for wikitext mode and eval")
@@ -422,7 +521,25 @@ def main():
                    help="If set, train only the steerer until eval_steerer_on is at or below this PPL, then unfreeze the neural surface.")
     p.add_argument("--steerer-warmup-patience", "--prior-on-warmup-patience", dest="steerer_warmup_patience", type=int, default=1,
                    help="Consecutive evals where eval_steerer_on is at or below the warmup PPL threshold before unfreezing the neural surface.")
+    p.add_argument("--max-warmup-epochs", type=int, default=0,
+                   help="If >0, stop if steerer warmup has not opened the neural-training gate after this many warmup epochs.")
+    p.add_argument("--stop-after-steerer-warmup", action="store_true",
+                   help="Stop immediately after the steerer reaches the warmup threshold. Use this to calibrate a reusable per-cartridge steerer artifact.")
+    p.add_argument("--calibrate-steering-controls", action="store_true",
+                   help="Before main training, freeze the model and cartridge body, overfit one batch to solve alpha/beta/gamma controls, then freeze the steerer.")
+    p.add_argument("--steering-control-steps", type=int, default=0,
+                   help="Number of repeated-batch alpha/beta/gamma calibration steps. Defaults to --steps when calibration is enabled.")
+    p.add_argument("--steering-control-lr", type=float, default=1e-2,
+                   help="Learning rate for alpha/beta/gamma calibration.")
+    p.add_argument("--steering-control-log-interval", type=int, default=25,
+                   help="Calibration log interval in steps.")
     args = p.parse_args()
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
 
     rank, world_size, local_rank, device = _init_dist()
     hostname = socket.gethostname()
@@ -500,13 +617,21 @@ def main():
         _rank0_print(rank, "[build] CMI compiled-prior steerer...")
         steerer = SuperpositionSteererV3(d_model=model_cfg['d_model'], init_scale=0.01, noise_scale=0.05).to(device)
         if resume_ckpt is not None and resume_ckpt.get('steerer_state') is not None:
-            steerer.load_state_dict(resume_ckpt['steerer_state'])
+            _load_steerer_state(steerer, resume_ckpt['steerer_state'], rank, 'resume')
             _rank0_print(rank, "[resume] steerer loaded")
+        if args.init_steerer_checkpoint:
+            steerer_path = os.path.expanduser(args.init_steerer_checkpoint)
+            _rank0_print(rank, f"[init] Loading steerer-only checkpoint: {steerer_path}")
+            steerer_ckpt = torch.load(steerer_path, map_location=device, weights_only=False)
+            steerer_state = _extract_steerer_state(steerer_ckpt)
+            if steerer_state is None:
+                raise ValueError(f"checkpoint does not contain a steerer state: {steerer_path}")
+            _load_steerer_state(steerer, steerer_state, rank, 'init')
+            _rank0_print(rank, "[init] steerer-only state loaded")
+        if args.freeze_steerer and not args.calibrate_steering_controls:
+            _set_requires_grad(steerer.parameters(), False)
+            _rank0_print(rank, "[phase] steerer/cartridge parameters frozen; cartridge remains active")
         n_hooks = steerer.register_hooks(model)
-    model_trainable_params = trainable_parameters(model)
-    model_trainable = sum(param.numel() for param in model_trainable_params)
-    steerer_trainable = sum(param.numel() for param in steerer.parameters()) if steerer is not None else 0
-    _rank0_print(rank, f"  hooks={n_hooks} model_trainable={model_trainable:,} steerer_trainable={steerer_trainable:,}")
     _rank0_print(rank, "  metrics: eval_steerer_on=validation with steerer active; eval_steerer_off=validation with steerer disabled")
 
     # Load compiled priors
@@ -540,9 +665,31 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=args.batch,
                               num_workers=2, pin_memory=True, drop_last=True)
 
+    loader_iter = iter(train_loader)
+    if args.calibrate_steering_controls:
+        args.steering_control_steps = args.steering_control_steps or args.steps
+        calibration_batch = next(loader_iter)
+        _rank0_print(
+            rank,
+            f"[control-cal] overfitting one batch for {args.steering_control_steps} steps; "
+            f"lr={args.steering_control_lr:g}; trainable=alpha,beta,gamma",
+        )
+        _run_steering_control_calibration(model, steerer, gpu_fc, calibration_batch, args, rank, world_size, handle, device)
+        _set_requires_grad(steerer.parameters(), False)
+        _rank0_print(rank, "[phase] calibrated alpha/beta/gamma frozen; cartridge remains active")
+    elif args.freeze_steerer and steerer is not None:
+        _set_requires_grad(steerer.parameters(), False)
+
+    model_trainable_params = trainable_parameters(model)
+    steerer_trainable_params = _trainable_params(steerer.parameters()) if steerer is not None else []
+    steerer_update_enabled = bool(steerer_trainable_params)
+    model_trainable = sum(param.numel() for param in model_trainable_params)
+    steerer_trainable = sum(param.numel() for param in steerer_trainable_params)
+    _rank0_print(rank, f"  hooks={n_hooks} model_trainable={model_trainable:,} steerer_trainable={steerer_trainable:,}")
+
     opt = torch.optim.AdamW([
         {'params': model_trainable_params, 'lr': args.lr},
-    ] + ([{'params': steerer.parameters(), 'lr': args.steerer_lr}] if steerer is not None else []))
+    ] + ([{'params': steerer_trainable_params, 'lr': args.steerer_lr}] if steerer_trainable_params else []))
     best_eval_b = resume_best_eval_b
     best_eval_s = resume_best_eval_s
     last_early_stop_improvement_epoch = resume_main_epoch
@@ -564,8 +711,9 @@ def main():
             f"steerer warmup gate requires eval_steerer_on <= {args.freeze_model_until_steerer_ppl:g} "
             f"for {args.steerer_warmup_patience} eval(s)",
         )
-    _rank0_print(rank, f"[phase] resume counters: main_epoch={main_epoch} warmup_epoch={warmup_epoch} total_epoch={total_epoch}; requested_main_epochs={args.epochs}")
+    _rank0_print(rank, f"[phase] resume: epoch={total_epoch}; requested_epochs={args.epochs}")
 
+    stop_after_epoch = False
     while main_epoch < args.epochs:
         epoch_neural_training_enabled = neural_training_enabled
         total_epoch += 1
@@ -575,29 +723,30 @@ def main():
             warmup_epoch += 1
         model.train()
         total_loss = 0.0; t0 = time.time()
-        loader_iter = iter(train_loader)
 
         for step in range(args.steps):
-            x, y, w_cpu = next(loader_iter)
+            try:
+                x, y, w_cpu = next(loader_iter)
+            except StopIteration:
+                loader_iter = iter(train_loader)
+                x, y, w_cpu = next(loader_iter)
             x = x.to(device, non_blocking=True)
             y = y.to(device, non_blocking=True)
             w_cpu = w_cpu.to(device, non_blocking=True)
 
             if steerer is not None and steerer_training_enabled:
-                w_gpu = gpu_fc.compute_features(x)
-                w_gpu[:, :, 0:9] = w_cpu[:, :, :9]
-                steerer.set_weights(w_gpu)
+                _set_steerer_batch_weights(steerer, gpu_fc, x, w_cpu, device)
             elif steerer is not None:
                 steerer._current_weights = None
             out = model(x)
             loss = F.cross_entropy(out.logits.reshape(-1, V), y.reshape(-1))
-            if steerer is not None and steerer_training_enabled:
+            if steerer_trainable_params and steerer_training_enabled:
                 loss = loss + 0.001 * steerer.orthogonal_penalty()
 
             opt.zero_grad(set_to_none=True)
             loss.backward()
             _manual_allreduce_grads(model, world_size, handle.grad_process_group)
-            if steerer is not None:
+            if steerer_trainable_params:
                 _manual_allreduce_grads(steerer, world_size, handle.grad_process_group)
             opt.step()
             total_loss += loss.item()
@@ -669,6 +818,16 @@ def main():
                     f"[phase] eval_steerer_on={eval_s:.1f} reached warmup threshold <= {args.freeze_model_until_steerer_ppl:g} "
                     f"for {steerer_warmup_win_count} eval(s); main training starts at epoch 1 next",
                 )
+                if args.stop_after_steerer_warmup:
+                    stop_after_epoch = True
+                    _rank0_print(rank, "[phase] stop-after-steerer-warmup requested; calibration run will stop after checkpointing this epoch")
+            elif args.max_warmup_epochs > 0 and warmup_epoch >= args.max_warmup_epochs:
+                stop_after_epoch = True
+                _rank0_print(
+                    rank,
+                    f"[phase] max_warmup_epochs={args.max_warmup_epochs} reached before eval_steerer_on crossed "
+                    f"{args.freeze_model_until_steerer_ppl:g}; stopping warmup run",
+                )
 
         if status:
             backend_name = f"{args.backend}_4bit" if args.compute_in_4bit else args.backend
@@ -695,7 +854,9 @@ def main():
                  'current_batch_loss': avg_loss,
                  'current_batch_ppl': current_batch_ppl,
                  'steerer_available_during_train': steerer is not None,
-                 'steerer_training_enabled': steerer_training_enabled,
+                 'steerer_active_during_train': steerer_training_enabled,
+                 'steerer_training_enabled': steerer_update_enabled,
+                 'steerer_update_enabled': steerer_update_enabled,
                  'eval_steerer_on': eval_s,
                  'eval_steerer_off': eval_b,
                  'best_eval_steerer_on': best_eval_s,
@@ -706,7 +867,7 @@ def main():
                  'compiled_prior_active_during_train': steerer is not None,
                  'eval_prior_on': eval_s,
                  'eval_prior_off': eval_b,
-                 'prior_training_enabled': steerer_training_enabled,
+                 'prior_training_enabled': steerer_update_enabled,
                  'neural_training_enabled': neural_training_enabled,
                  'neural_training_enabled_this_epoch': epoch_neural_training_enabled,
                  'freeze_model_until_prior_on_ppl': args.freeze_model_until_steerer_ppl,
@@ -728,15 +889,17 @@ def main():
                  'resume_checkpoint': args.resume_checkpoint},
             )
 
-        _rank0_print(rank, f"  main_epoch={main_epoch:3d}/{args.epochs}  warmup_epoch={warmup_epoch:3d}  total_epoch={total_epoch:3d}  current_batch_loss={avg_loss:.4f}  current_batch_ppl={current_batch_ppl:.1f}  "
-                 f"eval_steerer_on={eval_s:.1f}  best_steerer_on={best_eval_s:.1f}  "
-                     f"eval_steerer_off={eval_b:.1f}  best_steerer_off={best_eval_b:.1f}  "
-                     f"steerer_train={'on' if steerer_training_enabled else 'off'}  "
-                     f"neural_train={'on' if epoch_neural_training_enabled else 'warmup'}  [{status}]  time={elapsed:.0f}s")
+        saved_status = _format_saved_status(status)
+        _rank0_print(rank, f"  epoch={total_epoch:3d}/{args.epochs}  loss={avg_loss:.4f}  ppl={current_batch_ppl:.1f}  "
+                     f"eval_on={eval_s:.1f}  best_on={best_eval_s:.1f}  "
+                     f"eval_off={eval_b:.1f}  best_off={best_eval_b:.1f}  "
+                     f"cartridge={'on' if steerer_training_enabled else 'off'}  "
+                 f"steerer={'train' if steerer_update_enabled else 'frozen'}  saved={saved_status}  time={elapsed:.0f}s")
 
         if (
             steerer is not None
             and steerer_training_enabled
+            and steerer_update_enabled
             and neural_training_enabled
             and args.disable_steerer_after_plateau > 0
             and main_epoch - last_steerer_on_improvement_epoch >= args.disable_steerer_after_plateau
@@ -758,6 +921,9 @@ def main():
                     f"last_improved_main_epoch={last_early_stop_improvement_epoch} current_main_epoch={main_epoch}",
                 )
                 break
+
+        if stop_after_epoch:
+            break
 
     _rank0_print(rank, f"Done. Best eval_steerer_off: {best_eval_b:.1f}  Best eval_steerer_on: {best_eval_s:.1f}")
     dist.destroy_process_group()

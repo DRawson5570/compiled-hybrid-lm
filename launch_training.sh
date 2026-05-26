@@ -24,6 +24,11 @@ DISABLE_STEERER_AFTER_PLATEAU="${DISABLE_STEERER_AFTER_PLATEAU:-${DISABLE_PRIOR_
 FREEZE_MODEL_UNTIL_STEERER_PPL="${FREEZE_MODEL_UNTIL_STEERER_PPL:-${FREEZE_MODEL_UNTIL_PRIOR_ON_PPL:-}}"
 STEERER_WARMUP_PATIENCE="${STEERER_WARMUP_PATIENCE:-${PRIOR_ON_WARMUP_PATIENCE:-}}"
 CHECKPOINT="${CHECKPOINT:-}"
+INIT_STEERER_CHECKPOINT="${INIT_STEERER_CHECKPOINT:-}"
+FREEZE_STEERER=0
+CALIBRATE_STEERING_CONTROLS=0
+STEERING_CONTROL_STEPS="${STEERING_CONTROL_STEPS:-}"
+STEERING_CONTROL_LR="${STEERING_CONTROL_LR:-}"
 OUT_DIR="${OUT_DIR:-}"
 OUT_DIR_EXPLICIT=0
 PORT=""
@@ -44,6 +49,9 @@ DRY_RUN=0
 STATUS_ONLY=0
 SYNC=1
 ALLOW_EXISTING_OUT_DIR=0
+MAX_WARMUP_EPOCHS="${MAX_WARMUP_EPOCHS:-}"
+STOP_AFTER_STEERER_WARMUP=0
+NO_STEERER_WARMUP=0
 
 usage() {
   cat <<'USAGE'
@@ -78,6 +86,15 @@ Common options:
   --data-mode MODE        wikitext or c4-mix. Default: c4-mix
   --c4-ratio X            C4 mixing ratio. Default: 1.0
   --checkpoint PATH       Checkpoint path on the machine where training runs.
+  --init-steerer-checkpoint PATH
+                          Load only steerer/cartridge weights from PATH; do not resume model or counters.
+  --freeze-steerer       Keep the loaded steerer/cartridge active but freeze its parameters.
+  --calibrate-steering-controls
+                          Freeze model/cartridge body, overfit one batch to solve alpha/beta/gamma, then freeze steerer.
+  --steering-control-steps N
+                          Repeated-batch alpha/beta/gamma calibration steps. Defaults to --steps.
+  --steering-control-lr X
+                          Alpha/beta/gamma calibration learning rate. Default: trainer default.
   --out-dir PATH          Output directory on the machine where training runs.
   --allow-existing-out-dir
                           Allow --fresh to write into an output dir that already has checkpoints.
@@ -95,6 +112,11 @@ Common options:
                           Train only the steerer until eval_steerer_on <= X. Warmup epochs do not count against --epochs.
   --steerer-warmup-patience N
                           Consecutive steerer-on evals under threshold before neural training starts. Default: 1
+  --max-warmup-epochs N   Stop if the steerer gate has not opened after N warmup epochs.
+  --stop-after-steerer-warmup
+                          Stop immediately after the steerer reaches the warmup threshold; useful for cartridge calibration.
+  --no-steerer-warmup    Do not freeze the neural surface before main training. Use with --init-steerer-checkpoint
+                          when a calibrated per-cartridge steerer is already useful.
   --port N                torchrun master port.
   --gpus LIST             CUDA_VISIBLE_DEVICES list.
   --status                Show active matching training processes and exit.
@@ -129,6 +151,11 @@ while [[ $# -gt 0 ]]; do
     --data-mode) DATA_MODE="$2"; shift 2 ;;
     --c4-ratio) C4_RATIO="$2"; shift 2 ;;
     --checkpoint) CHECKPOINT="$2"; shift 2 ;;
+    --init-steerer-checkpoint) INIT_STEERER_CHECKPOINT="$2"; shift 2 ;;
+    --freeze-steerer) FREEZE_STEERER=1; shift ;;
+    --calibrate-steering-controls) CALIBRATE_STEERING_CONTROLS=1; shift ;;
+    --steering-control-steps) STEERING_CONTROL_STEPS="$2"; shift 2 ;;
+    --steering-control-lr) STEERING_CONTROL_LR="$2"; shift 2 ;;
     --out-dir) OUT_DIR="$2"; OUT_DIR_EXPLICIT=1; shift 2 ;;
     --allow-existing-out-dir) ALLOW_EXISTING_OUT_DIR=1; shift ;;
     --steps) STEPS="$2"; shift 2 ;;
@@ -142,6 +169,9 @@ while [[ $# -gt 0 ]]; do
     --disable-steerer-after-plateau|--disable-prior-after-on-plateau) DISABLE_STEERER_AFTER_PLATEAU="$2"; shift 2 ;;
     --freeze-model-until-steerer-ppl|--freeze-model-until-prior-on-ppl) FREEZE_MODEL_UNTIL_STEERER_PPL="$2"; shift 2 ;;
     --steerer-warmup-patience|--prior-on-warmup-patience) STEERER_WARMUP_PATIENCE="$2"; shift 2 ;;
+    --max-warmup-epochs) MAX_WARMUP_EPOCHS="$2"; shift 2 ;;
+    --stop-after-steerer-warmup) STOP_AFTER_STEERER_WARMUP=1; shift ;;
+    --no-steerer-warmup) NO_STEERER_WARMUP=1; shift ;;
     --port) PORT="$2"; shift 2 ;;
     --gpus) GPUS="$2"; shift 2 ;;
     --zeroq-path) ZEROQ_PATH="$2"; shift 2 ;;
@@ -319,6 +349,10 @@ case "$TARGET" in
   *) echo "Unknown target: $TARGET" >&2; usage >&2; exit 2 ;;
 esac
 
+if [[ "$NO_STEERER_WARMUP" == "1" ]]; then
+  FREEZE_MODEL_UNTIL_STEERER_PPL=""
+fi
+
 find_matching_pids_py='import os, sys
 model_config = sys.argv[1]
 out_dir = sys.argv[2]
@@ -455,6 +489,27 @@ run_local() {
   if [[ -n "$FREEZE_MODEL_UNTIL_STEERER_PPL" ]]; then
     cmd+=(--freeze-model-until-steerer-ppl "$FREEZE_MODEL_UNTIL_STEERER_PPL" --steerer-warmup-patience "$STEERER_WARMUP_PATIENCE")
   fi
+  if [[ -n "$INIT_STEERER_CHECKPOINT" ]]; then
+    cmd+=(--init-steerer-checkpoint "$INIT_STEERER_CHECKPOINT")
+  fi
+  if [[ "$FREEZE_STEERER" == "1" ]]; then
+    cmd+=(--freeze-steerer)
+  fi
+  if [[ "$CALIBRATE_STEERING_CONTROLS" == "1" ]]; then
+    cmd+=(--calibrate-steering-controls)
+  fi
+  if [[ -n "$STEERING_CONTROL_STEPS" ]]; then
+    cmd+=(--steering-control-steps "$STEERING_CONTROL_STEPS")
+  fi
+  if [[ -n "$STEERING_CONTROL_LR" ]]; then
+    cmd+=(--steering-control-lr "$STEERING_CONTROL_LR")
+  fi
+  if [[ -n "$MAX_WARMUP_EPOCHS" ]]; then
+    cmd+=(--max-warmup-epochs "$MAX_WARMUP_EPOCHS")
+  fi
+  if [[ "$STOP_AFTER_STEERER_WARMUP" == "1" ]]; then
+    cmd+=(--stop-after-steerer-warmup)
+  fi
   if [[ "$BACKEND" == "zeroq" ]]; then
     cmd+=(--zeroq-path "$ZEROQ_PATH" --compute-in-4bit)
   fi
@@ -585,6 +640,27 @@ cmd=(
 if [[ -n "$FREEZE_MODEL_UNTIL_STEERER_PPL" ]]; then
   cmd+=(--freeze-model-until-steerer-ppl "$FREEZE_MODEL_UNTIL_STEERER_PPL" --steerer-warmup-patience "$STEERER_WARMUP_PATIENCE")
 fi
+if [[ -n "$INIT_STEERER_CHECKPOINT" ]]; then
+  cmd+=(--init-steerer-checkpoint "$INIT_STEERER_CHECKPOINT")
+fi
+if [[ "$FREEZE_STEERER" == "1" ]]; then
+  cmd+=(--freeze-steerer)
+fi
+if [[ "$CALIBRATE_STEERING_CONTROLS" == "1" ]]; then
+  cmd+=(--calibrate-steering-controls)
+fi
+if [[ -n "$STEERING_CONTROL_STEPS" ]]; then
+  cmd+=(--steering-control-steps "$STEERING_CONTROL_STEPS")
+fi
+if [[ -n "$STEERING_CONTROL_LR" ]]; then
+  cmd+=(--steering-control-lr "$STEERING_CONTROL_LR")
+fi
+if [[ -n "$MAX_WARMUP_EPOCHS" ]]; then
+  cmd+=(--max-warmup-epochs "$MAX_WARMUP_EPOCHS")
+fi
+if [[ "$STOP_AFTER_STEERER_WARMUP" == "1" ]]; then
+  cmd+=(--stop-after-steerer-warmup)
+fi
 cmd+=(
   --zeroq-path /home/drawson/ZeroQ --compute-in-4bit
   "${resume_args[@]}"
@@ -612,6 +688,8 @@ REMOTE
     SEQ_LEN="$SEQ_LEN" EVAL_TOKENS="$EVAL_TOKENS" LR="$LR" STEERER_LR="$STEERER_LR" \
     EARLY_STOP_METRIC="$EARLY_STOP_METRIC" EARLY_STOP_PATIENCE="$EARLY_STOP_PATIENCE" DISABLE_STEERER_AFTER_PLATEAU="$DISABLE_STEERER_AFTER_PLATEAU" \
     FREEZE_MODEL_UNTIL_STEERER_PPL="$FREEZE_MODEL_UNTIL_STEERER_PPL" STEERER_WARMUP_PATIENCE="$STEERER_WARMUP_PATIENCE" CHECKPOINT="$CHECKPOINT" \
+    INIT_STEERER_CHECKPOINT="$INIT_STEERER_CHECKPOINT" FREEZE_STEERER="$FREEZE_STEERER" CALIBRATE_STEERING_CONTROLS="$CALIBRATE_STEERING_CONTROLS" \
+    STEERING_CONTROL_STEPS="$STEERING_CONTROL_STEPS" STEERING_CONTROL_LR="$STEERING_CONTROL_LR" MAX_WARMUP_EPOCHS="$MAX_WARMUP_EPOCHS" STOP_AFTER_STEERER_WARMUP="$STOP_AFTER_STEERER_WARMUP" \
     OUT_DIR="$OUT_DIR" PORT="$PORT" GPUS="$GPUS" REMOTE_REPO="$REMOTE_REPO" REMOTE_TORCHRUN="$REMOTE_TORCHRUN" \
     REMOTE_PYTHON="$REMOTE_PYTHON" HF_CACHE="$HF_CACHE" FRESH="$FRESH" FORCE_KILL="$FORCE_KILL" \
     DRY_RUN="$DRY_RUN" FOREGROUND="$FOREGROUND" STATUS_ONLY="$STATUS_ONLY" ALLOW_EXISTING_OUT_DIR="$ALLOW_EXISTING_OUT_DIR" \

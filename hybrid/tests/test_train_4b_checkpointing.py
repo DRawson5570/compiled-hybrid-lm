@@ -1,11 +1,17 @@
 import torch
 
 from hybrid.hf_deepseek import DeepSeekConfig, DeepSeekForCausalLM
+from hybrid.superposition_steerer_v3 import SuperpositionSteererV3
 from hybrid.train_4b_distributed import (
     _early_stop_metric_improved,
+    _extract_steerer_state,
+    _format_saved_status,
+    _freeze_except,
     _resume_epoch_counters,
     _save_metric_checkpoints,
     _steerer_on_under_ppl,
+    _steerer_control_parameters,
+    _trainable_params,
     _trainable_surface_for_model,
     _uses_cmi_steerer,
 )
@@ -74,6 +80,13 @@ def test_early_stop_metric_improved_tracks_requested_metric():
     assert not _early_stop_metric_improved("bs", "none")
 
 
+def test_format_saved_status_names_checkpoint_updates_not_training():
+    assert _format_saved_status("") == "-"
+    assert _format_saved_status("s") == "on"
+    assert _format_saved_status("b") == "off"
+    assert _format_saved_status("bs") == "on,off"
+
+
 def test_steerer_warmup_gate_uses_absolute_ppl_threshold():
     assert _steerer_on_under_ppl(50.0, 50.0)
     assert _steerer_on_under_ppl(49.9, 50.0)
@@ -86,6 +99,35 @@ def test_resume_epoch_counters_split_warmup_and_main_epochs():
     assert _resume_epoch_counters({"epoch": 12}) == (12, 0, 12, True)
     assert _resume_epoch_counters({"epoch": 7, "neural_training_enabled": False}) == (0, 7, 7, False)
     assert _resume_epoch_counters({"epoch": 3, "main_epoch": 3, "warmup_epoch": 5, "total_epoch": 8, "neural_training_enabled": True}) == (3, 5, 8, True)
+
+
+def test_extract_steerer_state_accepts_full_checkpoint_or_raw_state_dict():
+    raw_state = {"steer_local": torch.ones(1), "gammas.0": torch.ones(1)}
+
+    assert _extract_steerer_state({"steerer_state": raw_state}) is raw_state
+    assert _extract_steerer_state(raw_state) is raw_state
+    assert _extract_steerer_state({"state_dict": {"head_bias": torch.ones(1)}}) is None
+
+
+def test_trainable_params_filters_frozen_parameters():
+    trainable = torch.nn.Parameter(torch.ones(1), requires_grad=True)
+    frozen = torch.nn.Parameter(torch.ones(1), requires_grad=False)
+
+    assert _trainable_params([trainable, frozen]) == [trainable]
+
+
+def test_steering_control_parameters_are_alpha_beta_gamma_only():
+    steerer = SuperpositionSteererV3(d_model=16, inject_layers=[0, 1])
+    control_params = _steerer_control_parameters(steerer)
+    control_ids = {id(param) for param in control_params}
+    named_controls = {name for name, param in steerer.named_parameters() if id(param) in control_ids}
+
+    assert named_controls == {"alpha", "betas.local", "betas.mid", "betas.global", "gammas.0", "gammas.1"}
+
+    _freeze_except(control_params, list(steerer.parameters()))
+    assert all(param.requires_grad for param in control_params)
+    assert not steerer.steer_local.requires_grad
+    assert not steerer.local_mlp[0].weight.requires_grad
 
 
 def test_trainable_surface_names_separate_product_and_thesis_tracks():
