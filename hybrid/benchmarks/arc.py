@@ -467,8 +467,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
                         help="Cartridge rack directory for qwen-rack mode")
     eval_p.add_argument("--router-path", default=None,
                         help="Learned router path for qwen-rack mode")
-    eval_p.add_argument("--composition-mode", default="gated-chain",
-                        help="Composition mode for qwen-rack mode")
+    eval_p.add_argument("--composition-mode", default="chain",
+                        help="Composition mode for qwen-rack mode (additive, mean, chain)")
     eval_p.add_argument("--cartridge-path", default=None,
                         help="Single cartridge path for qwen-single-cartridge mode")
     eval_p.add_argument("--adapter-dir", default=None,
