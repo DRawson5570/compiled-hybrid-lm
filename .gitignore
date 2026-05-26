@@ -67,3 +67,6 @@ resume_pe2_4b_zeroq_4bit.sh
 hybrid/PRODUCT_SPEC.md
 hybrid/FRONTIER_SPEC.md
 hybrid/HYBRID_STRATEGY.md
+
+# Local experiment scripts
+experiments/
