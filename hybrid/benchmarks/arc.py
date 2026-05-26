@@ -92,6 +92,9 @@ def _run_eval_qwen_rack(
     router_path: str | None,
     composition_mode: str,
     log_every: int,
+    force_cartridge_id: str | None = None,
+    force_route: str | None = None,
+    arc_cartridge_path: str | None = None,
 ) -> list[ScoredExample]:
     import torch
     from hybrid.cartridge_harness.qwen import QwenCartridgeRuntime
@@ -116,37 +119,69 @@ def _run_eval_qwen_rack(
                         if cart_path.is_file() and cart_path.name in cartridge_patterns:
                             runtime.load_cartridge(cart_path)
         else:
-            print(f"  rack out-dir not found, running with no cartridges: {out_dir}", flush=True)
+            print(f"  rack out-dir not found: {out_dir}", flush=True)
+    if arc_cartridge_path:
+        arc_path = Path(arc_cartridge_path)
+        if arc_path.exists() and arc_path.is_file():
+            runtime.load_cartridge(arc_path)
     if router_path:
         router = Path(router_path)
         if router.exists():
             runtime.load_prompt_router(router_path)
         else:
-            print(f"  router path not found, using fallback: {router_path}", flush=True)
+            print(f"  router path not found: {router_path}", flush=True)
     runtime.set_composition_mode(composition_mode)
+
+    routing_mode = "learned"
+    if force_route is not None:
+        routing_mode = "forced"
+    elif force_cartridge_id is not None:
+        routing_mode = "forced"
 
     tokenizer = runtime.tokenizer
     model = runtime.hf_model
 
     scorer = HFArcScorer(model, tokenizer, torch_device)
     scored: list[ScoredExample] = []
+    route_trace: list[dict] = []
+    route_counts: dict[str, int] = {}
 
     t_start = time.perf_counter()
     for i, example in enumerate(examples):
         cartridge_id = None
         prompt = template.render_prompt(example)
-        try:
-            cartridge_id = runtime.route_prompt(prompt)
-        except Exception:
-            pass
-        if cartridge_id:
-            runtime.activate_only(cartridge_id)
-        else:
+
+        if force_route == "none":
             runtime.activate_only(None)
+            route = "none"
+        elif force_cartridge_id is not None:
+            runtime.activate_only(force_cartridge_id)
+            route = force_cartridge_id
+        else:
+            route = None
+            try:
+                cartridge_id = runtime.route_prompt(prompt)
+                route = cartridge_id
+            except Exception:
+                pass
+            if cartridge_id and cartridge_id != "none":
+                runtime.activate_only(cartridge_id)
+            else:
+                runtime.activate_only(None)
+                route = "none"
+
+        route_counts[route or "none"] = route_counts.get(route or "none", 0) + 1
 
         with torch.no_grad():
             se = scorer.score_example(example, template)
         scored.append(se)
+
+        route_trace.append({
+            "id": example.id,
+            "route": route,
+            "selected_cartridge_id": route if route and route != "none" else None,
+            "cartridge_activated": route is not None and route != "none",
+        })
 
         if (i + 1) % log_every == 0 or i == len(examples) - 1:
             correct = sum(1 for s in scored if s.correct_norm)
@@ -159,18 +194,27 @@ def _run_eval_qwen_rack(
     runtime.cleanup()
 
     if report_dir:
+        route_trace_path = report_dir / "route_trace.jsonl"
+        import json as _j
+        route_trace_path.write_text(
+            "\n".join(_j.dumps(rr) for rr in route_trace) + "\n", encoding="utf-8"
+        )
+
         meta = {
             "config": examples[0].config if examples else "ARC-Challenge",
             "dataset": "allenai/ai2_arc",
             "split": examples[0].split if examples else "validation",
             "model": model_name,
             "mode": "qwen-rack",
+            "routing_mode": routing_mode,
             "prompt_template": template.template_id,
             "prompt_template_sha256": template.hash(),
             "router_path": router_path or "",
             "router_type": "qwen_embedding_linear_v1" if router_path else "qwen_prompt_fallback",
             "composition_mode": composition_mode,
+            "mounted_cartridge_count": len(runtime.loaded),
             "mounted_cartridges": sorted(runtime.loaded.keys()),
+            "route_counts": route_counts,
             "duration_sec": time.perf_counter() - t_start,
             "started_at": "",
         }
@@ -345,6 +389,9 @@ def cmd_eval(args: argparse.Namespace) -> int:
             valid, template, args.model, device, report_dir,
             args.out_dir, args.router_path, args.composition_mode,
             args.log_every,
+            force_cartridge_id=args.force_cartridge_id,
+            force_route=args.force_route,
+            arc_cartridge_path=args.arc_cartridge_path,
         )
     elif args.mode == "qwen-single-cartridge":
         if not args.cartridge_path:
@@ -473,6 +520,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
                         help="Single cartridge path for qwen-single-cartridge mode")
     eval_p.add_argument("--adapter-dir", default=None,
                         help="Baked LoRA adapter dir for baked-lora mode")
+    eval_p.add_argument("--force-cartridge-id", default=None,
+                        help="Diagnostic: force a specific cartridge id instead of router")
+    eval_p.add_argument("--force-route", default=None,
+                        help="Diagnostic: force a route (e.g. 'none') for no-op test")
+    eval_p.add_argument("--arc-cartridge-path", default=None,
+                        help="Path to ARC cartridge.pt for mounting in the rack")
 
     train_p = sub.add_parser("train-cartridge", help="Train an ARC cartridge with option-ranking loss")
     train_p.add_argument("--config", default="ARC-Challenge")
