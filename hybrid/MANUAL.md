@@ -268,6 +268,18 @@ python3 chat_cartridge.py --mode chat \
   --chat-cartridge artifacts/steerer_chat/chat_cartridge.pt
 ```
 
+### Choosing a Capability Track
+
+Use three distinct tracks depending on the deployment goal:
+
+| Track | Use when | Operator rule |
+|---|---|---|
+| Frozen base + routed runtime cartridges | You need modular, auditable, hot-swappable capabilities on a frozen base model. | Mount compatible cartridges, load the learned router, and use gated/routed activation. Do not use all-active task composition for product evaluation. |
+| Training-time integrated cartridges | You want one fused model or adapter artifact and do not need runtime cartridge selection. | Train/co-train/bake the steering or adapter surface into the shipped artifact, then validate reload from disk. |
+| Agentic tooling / skill loading | The model or surrounding agent must decide which external capability to use during an open-ended workflow. | Treat tools, skills, cartridges, and compiled artifacts as dynamically discoverable resources; log what was loaded and why. |
+
+The first track is runtime routed activation. The second track is model/artifact creation. The third track is agentic discovery and use. Keep benchmark reports explicit about which track they exercise.
+
 ### Qwen Cartridge Rack: Learned Router Track
 
 Use this track when cartridges must remain modular, hot-swappable, auditable, and independently replaceable. Qwen stays frozen. The individual adapter cartridges are mounted into a rack, and a learned control-plane router selects which cartridge is active for each prompt.
@@ -295,6 +307,30 @@ CUDA_VISIBLE_DEVICES=0 ~/local_venvs/m40_env/bin/python -m hybrid.cartridge_harn
   --report artifacts/qwen_cartridge_rack_full_20260525_171513/learned_router_gated_chain_eval.json
 ```
 
+Run the rack one suite at a time when validating a newly trained router or checking for cross-cartridge regressions:
+
+```bash
+cd ~/deepseek_experiments
+
+rm -rf artifacts/qwen_cartridge_rack_full_20260525_171513/learned_router_one_by_one
+mkdir -p artifacts/qwen_cartridge_rack_full_20260525_171513/learned_router_one_by_one
+
+for suite in private_facts arithmetic code_labels safety_labels instruction_format; do
+  CUDA_VISIBLE_DEVICES=0 ~/local_venvs/m40_env/bin/python -m hybrid.cartridge_harness.cli eval-loaded-rack \
+    --model Qwen/Qwen2.5-1.5B \
+    --device cuda \
+    --out-dir artifacts/qwen_cartridge_rack_full_20260525_171513 \
+    --suite "$suite" \
+    --router-path artifacts/qwen_cartridge_rack_full_20260525_171513/learned_router/qwen_learned_router.pt \
+    --composition-mode gated-chain \
+    --skip-baseline \
+    --max-tokens 8 \
+    --report "artifacts/qwen_cartridge_rack_full_20260525_171513/learned_router_one_by_one/${suite}.json"
+done
+```
+
+`--max-tokens 8` is appropriate for the built-in rack suites because every expected answer is a one-token label/code. Remove or raise it for free-form cartridges.
+
 Expected validated pe3 result for the current rack:
 
 | Suite | Result |
@@ -306,6 +342,22 @@ Expected validated pe3 result for the current rack:
 | instruction_format | 24/24 |
 
 All suites should report `saved_score_regression=false`. If a task cartridge rack regresses under all-active composition, do not treat that as a rack failure; all-active task composition is a known unsafe diagnostic mode. Use `--composition-mode gated-chain` with the learned router for product evaluation.
+
+Validated one-by-one reports are written under:
+
+```text
+artifacts/qwen_cartridge_rack_full_20260525_171513/learned_router_one_by_one/
+```
+
+Current pe3 one-by-one routed results:
+
+| Suite | Routed cartridge | Score | saved_score_regression |
+|---|---|---:|---|
+| private_facts | qwen-private-facts-cartridge | 53/60 | false |
+| arithmetic | qwen-arithmetic-router-cartridge | 32/32 | false |
+| code_labels | qwen-code-router-cartridge | 24/24 | false |
+| safety_labels | qwen-safety-router-cartridge | 24/24 | false |
+| instruction_format | qwen-instruction-format-cartridge | 24/24 | false |
 
 ### Qwen Baked Adapter: Native LoRA Track
 
@@ -491,8 +543,9 @@ Features: temperature, top-p, top-k, repetition penalty, stop markers, n-gram re
 |---|---|---|
 | Learned router + gated rack | `artifacts/qwen_cartridge_rack_full_20260525_171513/learned_router/qwen_learned_router.pt` | private_facts 53/60; all other suites 100%; no saved-score regressions |
 | Baked native LoRA | `artifacts/qwen_cartridge_rack_full_20260525_171513/baked_lora_native_300/best_adapter` | eval_loss 0.0739; bounded generation eval 34/40; heldout 3/4 |
+| Agentic tool/skill loading | Control-plane architecture track | Not a fixed pe3 rack artifact; use when the agent dynamically discovers and loads capabilities during a workflow |
 
-The learned-router track is the modular cartridge architecture. The baked native-LoRA track is a fused deployment artifact. Both were tested; choose based on whether runtime cartridge control is required.
+The learned-router track is the modular cartridge architecture. The baked native-LoRA track is a fused deployment artifact. The agentic tool/skill track is a higher-level control-plane pattern. Choose based on whether runtime cartridge control, baked deployment, or dynamic capability discovery is required.
 
 ---
 

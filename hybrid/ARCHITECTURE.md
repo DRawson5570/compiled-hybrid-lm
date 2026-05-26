@@ -4,6 +4,7 @@ This document explains how compiled-hybrid-lm achieves frontier-quality language
 
 ## Table of Contents
 
+0. [Capability Tracks](#capability-tracks)
 1. [Overview](#1-overview)
 2. [Compiled Priors Pipeline](#2-compiled-priors-pipeline)
 3. [Superposition Steering](#3-superposition-steering)
@@ -12,6 +13,25 @@ This document explains how compiled-hybrid-lm achieves frontier-quality language
 6. [Cartridge System](#6-cartridge-system)
 7. [Memory and Throughput](#7-memory-and-throughput)
 8. [Key Design Decisions](#8-key-design-decisions)
+
+---
+
+## Capability Tracks
+
+The system supports three capability attachment tracks. They are complementary,
+but they answer different engineering questions.
+
+| Track | Question | Mechanism | Best fit |
+| --- | --- | --- | --- |
+| Frozen base plus routed runtime cartridges | Can a fixed model load task-specific capability artifacts on demand? | Keep the base model frozen, mount cartridge artifacts, and use a learned router or explicit control plane to activate one cartridge or a small gated set. | Modular products, hot-swappable capabilities, ablations, rollback, and benchmark comparisons against the same base model. |
+| Training-time integrated cartridges | Can capability be compiled, co-trained, or baked into the model artifact itself? | Train steering surfaces, adapters, compiled-channel heads, residual priors, or cartridge-like modules during model construction/refinement. | Faster inference, simpler deployment, model-native behavior, and capabilities that should always be present. |
+| Agentic tooling and skill loading | Can a model or agent decide which external capability to use while solving a task? | Let the surrounding agent loop discover, load, call, and unload tools, skills, cartridges, or compiled artifacts as needed. | Open-ended workflows, large capability libraries, and tasks where the needed capability is not known before runtime. |
+
+The first track is routed activation among external artifacts. The second track
+is baking or co-training capability into the artifact being shipped. The third
+track is a higher-level agentic control plane that can discover and use
+capabilities dynamically. Reports should name the track being evaluated so a
+runtime-router result is not confused with training-time integration or tool use.
 
 ---
 
@@ -364,6 +384,8 @@ prompt -> frozen Qwen embedding -> learned router head -> activate selected cart
 ```
 
 This gating is required for safe composition. Naive all-active composition was tested and is unsafe for task cartridges; it caused severe interference, including private-fact collapse to 0/60. The deterministic prompt router remains only as a fallback/proof harness. Product evaluation should use the learned router artifact at `learned_router/qwen_learned_router.pt`.
+
+The rack was also re-tested one suite at a time through the trained router with `--composition-mode gated-chain`, `--skip-baseline`, and `--max-tokens 8`. The reports live under `learned_router_one_by_one/` and confirm the router selects the expected cartridge for each suite: private_facts 53/60, arithmetic 32/32, code_labels 24/24, safety_labels 24/24, instruction_format 24/24, all with `saved_score_regression=false`.
 
 The baked native-LoRA track is separate. It distills the suite behavior into one reloadable adapter artifact, saved as `adapter.pt` plus `adapter_config.json`, and can be loaded with `QwenBakedLoraRunner.from_adapter(...)`. This path removes the runtime router, but it also removes cartridge-level hot-swapping, selective activation, and per-cartridge introspection. It is a deployment/packaging path, not a replacement for the modular router architecture.
 
