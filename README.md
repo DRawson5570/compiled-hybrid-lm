@@ -94,6 +94,8 @@ $$h_{l,t}^{new} = h_{l,t}^{old} + \gamma_l \cdot \mathbf{o}_{t,\text{norm}}$$
 
 The compiled prior computes 21 streaming channel features per token. These are projected through per-group MLPs (local/mid/global) and injected at 9 target layers. A tiny offset (γ ≈ 0.01) redirects the model between domain subspaces.
 
+The compiled prior itself is fixed: it is a deterministic feature generator, not a trained neural layer. Training updates the steerer/cartridge around it — the learned steering vectors, group MLPs, and γ/alpha-like injection strengths that decide how strongly those fixed features should shape the residual stream.
+
 ## Architecture
 
 ```

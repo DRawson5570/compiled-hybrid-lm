@@ -123,6 +123,8 @@ A causal cosine-similarity retrieval mechanism. Each token's PPMI embedding is c
 
 `SuperpositionSteererV3` (`superposition_steerer_v3.py`) is a 65K-parameter module that injects 21-channel features as activation offsets at 9 transformer layer positions.
 
+The 21 compiled channels are fixed statistical features. They are not trained by SGD. What trains is the steerer/control surface around those features: learned steering vectors, per-group MLP gates, and γ/alpha-like injection strengths that map fixed compiled evidence into residual-stream offsets.
+
 **Per-group MLP gatekeepers:**
 
 ```
