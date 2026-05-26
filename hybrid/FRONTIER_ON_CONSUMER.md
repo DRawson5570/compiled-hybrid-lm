@@ -47,8 +47,8 @@ A custom 4.7B-parameter decoder transformer (d=3072, 40 layers, explicit Q/K/V/O
 
 ### Prior Work Confirming the Pattern
 
-- **124M model (V4)**: Achieved eval_s=28.2, eval_b=35.6 after 4.5 hours on a single RTX 3080 — GPT-2 competitive at 3,400× fewer tokens.
-- **Domain cartridges**: Single frozen C4 base model + 70KB WikiText cartridge achieves eval_s=28.3. Published on HuggingFace.
+- **124M model (V4)**: Achieved `eval_steerer_on=28.2` (`eval_s`) and `eval_steerer_off=35.6` (`eval_b`) after 4.5 hours on a single RTX 3080 — GPT-2 competitive at 3,400× fewer tokens.
+- **Domain cartridges**: Single frozen C4 base model + 70KB WikiText cartridge achieves `eval_steerer_on=28.3` (`eval_s`). Published on HuggingFace.
 - **Chat cartridge**: Hot-swappable capability cartridge provides conversational behavior without model retraining.
 
 ## Why It Works

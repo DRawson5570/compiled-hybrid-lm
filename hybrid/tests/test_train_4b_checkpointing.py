@@ -3,9 +3,9 @@ import torch
 from hybrid.hf_deepseek import DeepSeekConfig, DeepSeekForCausalLM
 from hybrid.train_4b_distributed import (
     _early_stop_metric_improved,
-    _prior_on_under_ppl,
     _resume_epoch_counters,
     _save_metric_checkpoints,
+    _steerer_on_under_ppl,
     _trainable_surface_for_model,
     _uses_cmi_steerer,
 )
@@ -74,11 +74,11 @@ def test_early_stop_metric_improved_tracks_requested_metric():
     assert not _early_stop_metric_improved("bs", "none")
 
 
-def test_prior_on_warmup_gate_uses_absolute_ppl_threshold():
-    assert _prior_on_under_ppl(50.0, 50.0)
-    assert _prior_on_under_ppl(49.9, 50.0)
-    assert not _prior_on_under_ppl(50.1, 50.0)
-    assert not _prior_on_under_ppl(float("inf"), 50.0)
+def test_steerer_warmup_gate_uses_absolute_ppl_threshold():
+    assert _steerer_on_under_ppl(50.0, 50.0)
+    assert _steerer_on_under_ppl(49.9, 50.0)
+    assert not _steerer_on_under_ppl(50.1, 50.0)
+    assert not _steerer_on_under_ppl(float("inf"), 50.0)
 
 
 def test_resume_epoch_counters_split_warmup_and_main_epochs():

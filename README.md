@@ -24,13 +24,13 @@ At runtime, these merge via **Superposition Gated Steering**. The compiled prior
 Training on a single RTX 3080, 21-channel steerer, 59s/epoch:
 
 ```
-epoch=  1  loss=3.68  ppl=39.7  eval_s=34.9  eval_b=40.6  [bs]
-epoch= 50  loss=3.62  ppl=37.4  eval_s=32.1  eval_b=43.2  [b]
-epoch=100  loss=3.58  ppl=35.9  eval_s=30.4  eval_b=42.1  [bs]
+epoch=  1  loss=3.68  ppl=39.7  eval_steerer_on=34.9  eval_steerer_off=40.6  [bs]
+epoch= 50  loss=3.62  ppl=37.4  eval_steerer_on=32.1  eval_steerer_off=43.2  [b]
+epoch=100  loss=3.58  ppl=35.9  eval_steerer_on=30.4  eval_steerer_off=42.1  [bs]
 ```
 
-- **eval_s**: Steered perplexity — the hybrid system with cartridge active
-- **eval_b**: Blind perplexity — standalone model, proving prior absorption
+- **eval_steerer_on** (`eval_s` in older logs): Steered perplexity — the hybrid system with cartridge active
+- **eval_steerer_off** (`eval_b` in older logs): Blind perplexity — same checkpoint with the steerer disabled
 
 Baseline C4 model: 152 PPL. With WikiText cartridge: 35 PPL steered, 41 PPL standalone.
 
@@ -55,7 +55,7 @@ Current demo payload, measured on WikiText-103 validation with GPT-2 BPE:
 That is a 9.0031 PPL absolute gain, or 24.19% relative perplexity reduction,
 from enabling the cartridge on the same checkpoint.
 
-### Generation Samples (eval_s=35)
+### Generation Samples (`eval_steerer_on` ≈ 35)
 
 ```
 Prompt: "The capital of France is"
@@ -77,7 +77,7 @@ pip install -r requirements.txt
 python hybrid/quickstart.py
 ```
 
-Expected: `eval_s` splits from `eval_b` — proving the steering cartridge provides real signal.
+Expected: `eval_steerer_on` splits from `eval_steerer_off` — proving the steering cartridge provides real signal. Older logs may call these `eval_s` and `eval_b`.
 
 ## How It Works
 
@@ -155,20 +155,20 @@ README.md                      # This file
 
 ## Training
 
-### Full co-training (model absorbs compiled prior)
+### Staged thesis training (warm steerer, then train neural surface)
 ```bash
 python hybrid/train_steerer_v4.py \
     --neural-ckpt artifacts/c4_v2_768_x30/best.pt \
     --epochs 200 --steps 500 --batch 8
 ```
 
-For thesis runs, the neural surface should not learn under a bad early steerer. The distributed trainer supports an online steerer warmup gate: train the steerer first, keep the neural surface frozen, then unfreeze the neural surface once `eval_prior_on` reaches a configured PPL threshold. Warmup epochs are tracked separately; `--epochs` starts at 1 only after the neural surface unfreezes.
+For thesis runs, the neural surface should not learn under a bad early steerer. The distributed trainer supports an online steerer warmup gate: train the steerer first, keep the neural surface frozen, then unfreeze the neural surface once `eval_steerer_on` reaches a configured PPL threshold. Warmup epochs are tracked separately; `--epochs` starts at 1 only after the neural surface unfreezes.
 
 ```bash
 ./launch_training.sh --target local-700m-thesis-zeroq --fresh
 ```
 
-The thesis launcher targets enable `--freeze-model-until-prior-on-ppl 50` by default. Baseline targets leave this unset. Use a lower threshold only after the warmup reliably reaches 50; thresholds like 10, 5, or 2 are too strict for the first 700M ZeroQ thesis pass and can prevent neural training from ever starting.
+The thesis launcher targets enable `--freeze-model-until-steerer-ppl 50` by default. Baseline targets leave this unset. Use a lower threshold only after the warmup reliably reaches 50; thresholds like 10, 5, or 2 are too strict for the first 700M ZeroQ thesis pass and can prevent neural training from ever starting.
 
 ### Cartridge-only (frozen model, train cartridge)
 ```bash

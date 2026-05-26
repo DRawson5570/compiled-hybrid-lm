@@ -359,8 +359,8 @@ def _set_requires_grad(params, enabled):
         param.requires_grad = enabled
 
 
-def _prior_on_under_ppl(eval_prior_on, max_ppl):
-    return math.isfinite(eval_prior_on) and eval_prior_on <= max_ppl
+def _steerer_on_under_ppl(eval_steerer_on, max_ppl):
+    return math.isfinite(eval_steerer_on) and eval_steerer_on <= max_ppl
 
 
 def _resume_epoch_counters(ckpt):
@@ -413,15 +413,15 @@ def main():
     p.add_argument("--out-dir", default=None,
                    help="Checkpoint directory. Defaults to artifacts/train_<config>_<surface>_<backend>[_c4_mix]")
     p.add_argument("--early-stop-metric", choices=["none", "steered", "blind", "either"], default="none",
-                   help="Metric used for patience-based early stopping. 'steered' tracks eval_s/eval_prior_on, the product path.")
+                   help="Metric used for patience-based early stopping. 'steered' tracks eval_steerer_on, the product path.")
     p.add_argument("--early-stop-patience", type=int, default=0,
                    help="Stop after this many epochs without improvement on --early-stop-metric. 0 disables early stopping.")
-    p.add_argument("--disable-prior-after-on-plateau", type=int, default=0,
-                   help="If >0, stop using the compiled prior/steerer during training after eval_prior_on has not improved for this many epochs. Eval still reports prior-on/off diagnostics.")
-    p.add_argument("--freeze-model-until-prior-on-ppl", type=float, default=None,
-                   help="If set, train only the steerer until eval_prior_on is at or below this PPL, then unfreeze the neural surface.")
-    p.add_argument("--prior-on-warmup-patience", type=int, default=1,
-                   help="Consecutive evals where eval_prior_on is at or below the warmup PPL threshold before unfreezing the neural surface.")
+    p.add_argument("--disable-steerer-after-plateau", "--disable-prior-after-on-plateau", dest="disable_steerer_after_plateau", type=int, default=0,
+                   help="If >0, stop using the steerer during training after eval_steerer_on has not improved for this many main epochs. Eval still reports steerer-on/off diagnostics.")
+    p.add_argument("--freeze-model-until-steerer-ppl", "--freeze-model-until-prior-on-ppl", dest="freeze_model_until_steerer_ppl", type=float, default=None,
+                   help="If set, train only the steerer until eval_steerer_on is at or below this PPL, then unfreeze the neural surface.")
+    p.add_argument("--steerer-warmup-patience", "--prior-on-warmup-patience", dest="steerer_warmup_patience", type=int, default=1,
+                   help="Consecutive evals where eval_steerer_on is at or below the warmup PPL threshold before unfreezing the neural surface.")
     args = p.parse_args()
 
     rank, world_size, local_rank, device = _init_dist()
@@ -507,7 +507,7 @@ def main():
     model_trainable = sum(param.numel() for param in model_trainable_params)
     steerer_trainable = sum(param.numel() for param in steerer.parameters()) if steerer is not None else 0
     _rank0_print(rank, f"  hooks={n_hooks} model_trainable={model_trainable:,} steerer_trainable={steerer_trainable:,}")
-    _rank0_print(rank, "  metrics: eval_prior_on=validation with compiled prior/steerer active; eval_prior_off=validation with it disabled")
+    _rank0_print(rank, "  metrics: eval_steerer_on=validation with steerer active; eval_steerer_off=validation with steerer disabled")
 
     # Load compiled priors
     gpu_fc = None
@@ -546,23 +546,23 @@ def main():
     best_eval_b = resume_best_eval_b
     best_eval_s = resume_best_eval_s
     last_early_stop_improvement_epoch = resume_main_epoch
-    last_prior_on_improvement_epoch = resume_main_epoch
-    prior_training_enabled = steerer is not None
-    warmup_gate_enabled = steerer is not None and args.freeze_model_until_prior_on_ppl is not None
+    last_steerer_on_improvement_epoch = resume_main_epoch
+    steerer_training_enabled = steerer is not None
+    warmup_gate_enabled = steerer is not None and args.freeze_model_until_steerer_ppl is not None
     neural_training_enabled = True
-    prior_warmup_win_count = 0
+    steerer_warmup_win_count = 0
     main_epoch = resume_main_epoch
     warmup_epoch = resume_warmup_epoch
     total_epoch = resume_total_epoch
     if warmup_gate_enabled:
         neural_training_enabled = resume_neural_training_enabled if resume_ckpt is not None else False
-        prior_warmup_win_count = int(resume_ckpt.get('prior_warmup_win_count', 0)) if resume_ckpt is not None else 0
+        steerer_warmup_win_count = int(resume_ckpt.get('steerer_warmup_win_count', resume_ckpt.get('prior_warmup_win_count', 0))) if resume_ckpt is not None else 0
         _set_requires_grad(model_trainable_params, neural_training_enabled)
         _rank0_print(
             rank,
             f"[phase] neural surface starts {'unfrozen' if neural_training_enabled else 'frozen'}; "
-            f"steerer warmup gate requires eval_prior_on <= {args.freeze_model_until_prior_on_ppl:g} "
-            f"for {args.prior_on_warmup_patience} eval(s)",
+            f"steerer warmup gate requires eval_steerer_on <= {args.freeze_model_until_steerer_ppl:g} "
+            f"for {args.steerer_warmup_patience} eval(s)",
         )
     _rank0_print(rank, f"[phase] resume counters: main_epoch={main_epoch} warmup_epoch={warmup_epoch} total_epoch={total_epoch}; requested_main_epochs={args.epochs}")
 
@@ -583,7 +583,7 @@ def main():
             y = y.to(device, non_blocking=True)
             w_cpu = w_cpu.to(device, non_blocking=True)
 
-            if steerer is not None and prior_training_enabled:
+            if steerer is not None and steerer_training_enabled:
                 w_gpu = gpu_fc.compute_features(x)
                 w_gpu[:, :, 0:9] = w_cpu[:, :, :9]
                 steerer.set_weights(w_gpu)
@@ -591,7 +591,7 @@ def main():
                 steerer._current_weights = None
             out = model(x)
             loss = F.cross_entropy(out.logits.reshape(-1, V), y.reshape(-1))
-            if steerer is not None and prior_training_enabled:
+            if steerer is not None and steerer_training_enabled:
                 loss = loss + 0.001 * steerer.orthogonal_penalty()
 
             opt.zero_grad(set_to_none=True)
@@ -649,25 +649,25 @@ def main():
             best_eval_s = eval_s
             status += "s"
             if epoch_neural_training_enabled:
-                last_prior_on_improvement_epoch = main_epoch
+                last_steerer_on_improvement_epoch = main_epoch
         early_stop_improved = _early_stop_metric_improved(status, args.early_stop_metric)
         if epoch_neural_training_enabled and early_stop_improved:
             last_early_stop_improvement_epoch = main_epoch
 
         if warmup_gate_enabled and not neural_training_enabled:
-            if _prior_on_under_ppl(eval_s, args.freeze_model_until_prior_on_ppl):
-                prior_warmup_win_count += 1
+            if _steerer_on_under_ppl(eval_s, args.freeze_model_until_steerer_ppl):
+                steerer_warmup_win_count += 1
             else:
-                prior_warmup_win_count = 0
-            if prior_warmup_win_count >= max(1, args.prior_on_warmup_patience):
+                steerer_warmup_win_count = 0
+            if steerer_warmup_win_count >= max(1, args.steerer_warmup_patience):
                 neural_training_enabled = True
                 _set_requires_grad(model_trainable_params, True)
                 last_early_stop_improvement_epoch = main_epoch
-                last_prior_on_improvement_epoch = main_epoch
+                last_steerer_on_improvement_epoch = main_epoch
                 _rank0_print(
                     rank,
-                    f"[phase] eval_prior_on={eval_s:.1f} reached warmup threshold <= {args.freeze_model_until_prior_on_ppl:g} "
-                    f"for {prior_warmup_win_count} eval(s); main training starts at epoch 1 next",
+                    f"[phase] eval_steerer_on={eval_s:.1f} reached warmup threshold <= {args.freeze_model_until_steerer_ppl:g} "
+                    f"for {steerer_warmup_win_count} eval(s); main training starts at epoch 1 next",
                 )
 
         if status:
@@ -694,20 +694,30 @@ def main():
                  'eval_tokens': args.eval_tokens,
                  'current_batch_loss': avg_loss,
                  'current_batch_ppl': current_batch_ppl,
+                 'steerer_available_during_train': steerer is not None,
+                 'steerer_training_enabled': steerer_training_enabled,
+                 'eval_steerer_on': eval_s,
+                 'eval_steerer_off': eval_b,
+                 'best_eval_steerer_on': best_eval_s,
+                 'best_eval_steerer_off': best_eval_b,
+                 'freeze_model_until_steerer_ppl': args.freeze_model_until_steerer_ppl,
+                 'steerer_warmup_patience': args.steerer_warmup_patience,
+                 'steerer_warmup_win_count': steerer_warmup_win_count,
                  'compiled_prior_active_during_train': steerer is not None,
                  'eval_prior_on': eval_s,
                  'eval_prior_off': eval_b,
-                 'prior_training_enabled': prior_training_enabled,
+                 'prior_training_enabled': steerer_training_enabled,
                  'neural_training_enabled': neural_training_enabled,
                  'neural_training_enabled_this_epoch': epoch_neural_training_enabled,
-                 'freeze_model_until_prior_on_ppl': args.freeze_model_until_prior_on_ppl,
-                 'prior_on_warmup_patience': args.prior_on_warmup_patience,
-                 'prior_warmup_win_count': prior_warmup_win_count,
+                 'freeze_model_until_prior_on_ppl': args.freeze_model_until_steerer_ppl,
+                 'prior_on_warmup_patience': args.steerer_warmup_patience,
+                 'prior_warmup_win_count': steerer_warmup_win_count,
                  'training_phase': 'main' if epoch_neural_training_enabled else 'warmup',
                  'main_epoch': main_epoch,
                  'warmup_epoch': warmup_epoch,
                  'total_epoch': total_epoch,
-                 'disable_prior_after_on_plateau': args.disable_prior_after_on_plateau,
+                 'disable_steerer_after_plateau': args.disable_steerer_after_plateau,
+                 'disable_prior_after_on_plateau': args.disable_steerer_after_plateau,
                  'early_stop_metric': args.early_stop_metric,
                  'early_stop_patience': args.early_stop_patience,
                  'epoch': main_epoch,
@@ -719,24 +729,24 @@ def main():
             )
 
         _rank0_print(rank, f"  main_epoch={main_epoch:3d}/{args.epochs}  warmup_epoch={warmup_epoch:3d}  total_epoch={total_epoch:3d}  current_batch_loss={avg_loss:.4f}  current_batch_ppl={current_batch_ppl:.1f}  "
-                 f"eval_prior_on={eval_s:.1f}  best_prior_on={best_eval_s:.1f}  "
-                     f"eval_prior_off={eval_b:.1f}  best_prior_off={best_eval_b:.1f}  "
-                     f"prior_train={'on' if prior_training_enabled else 'off'}  "
+                 f"eval_steerer_on={eval_s:.1f}  best_steerer_on={best_eval_s:.1f}  "
+                     f"eval_steerer_off={eval_b:.1f}  best_steerer_off={best_eval_b:.1f}  "
+                     f"steerer_train={'on' if steerer_training_enabled else 'off'}  "
                      f"neural_train={'on' if epoch_neural_training_enabled else 'warmup'}  [{status}]  time={elapsed:.0f}s")
 
         if (
             steerer is not None
-            and prior_training_enabled
+            and steerer_training_enabled
             and neural_training_enabled
-            and args.disable_prior_after_on_plateau > 0
-            and main_epoch - last_prior_on_improvement_epoch >= args.disable_prior_after_on_plateau
+            and args.disable_steerer_after_plateau > 0
+            and main_epoch - last_steerer_on_improvement_epoch >= args.disable_steerer_after_plateau
         ):
-            prior_training_enabled = False
+            steerer_training_enabled = False
             steerer._current_weights = None
             _rank0_print(
                 rank,
-                f"[phase] eval_prior_on plateaued for {args.disable_prior_after_on_plateau} epochs; "
-                "compiled prior/steerer disabled for subsequent training epochs",
+                f"[phase] eval_steerer_on plateaued for {args.disable_steerer_after_plateau} epochs; "
+                "steerer disabled for subsequent training epochs",
             )
 
         if args.early_stop_metric != "none" and args.early_stop_patience > 0:
@@ -749,7 +759,7 @@ def main():
                 )
                 break
 
-    _rank0_print(rank, f"Done. Best eval_prior_off: {best_eval_b:.1f}  Best eval_prior_on: {best_eval_s:.1f}")
+    _rank0_print(rank, f"Done. Best eval_steerer_off: {best_eval_b:.1f}  Best eval_steerer_on: {best_eval_s:.1f}")
     dist.destroy_process_group()
 
 

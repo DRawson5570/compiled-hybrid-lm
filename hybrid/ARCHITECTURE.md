@@ -71,7 +71,7 @@ Pure SGD on massive clusters spends billions of tokens discovering statistical s
 ┌──────────────────────────────────────────────────────────────┐
 │                      OUTPUT                                   │
 │  logits + head_bias  │  weight-tied embedding projection      │
-│  eval_s (steered)  │  eval_b (baseline, no steerer)          │
+│  eval_steerer_on   │  eval_steerer_off (no steerer)          │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -185,11 +185,11 @@ def _steer_layer(self, h, layer_idx):
 
 ### Why Staged Online Co-Training
 
-The model and steerer are trained in one online run, but the neural surface should not start learning from a bad early steerer. Thesis targets use a warmup gate: train the steerer first while the neural surface is frozen, then unfreeze the neural surface once `eval_prior_on` reaches a configured PPL threshold. Warmup epochs are accounted separately from main neural-training epochs, so the thesis run gets the same main training budget as the baseline after the scaffold is ready.
+The model and steerer are trained in one online run, but the neural surface should not start learning from a bad early steerer. Thesis targets use a warmup gate: train the steerer first while the neural surface is frozen, then unfreeze the neural surface once `eval_steerer_on` reaches a configured PPL threshold. Warmup epochs are accounted separately from main neural-training epochs, so the thesis run gets the same main training budget as the baseline after the scaffold is ready.
 
 After that gate opens, the model and steerer co-train. This is not a post-hoc injection — the model learns to incorporate the steerer's signals, and the steerer learns to produce useful offsets in the model's activation space.
 
-**Frozen model + trainable steerer alone is not the final recipe.** The warmup gate is deliberately a qualifying phase: if the steerer cannot get `eval_prior_on` down to the configured threshold, the neural surface should not learn from it yet. Long frozen-backbone runs can starve hook gradients because the loss must propagate backward through many frozen layers to reach the steerer hooks. After the gate opens, the trainable neural surface provides the co-adaptation path the thesis needs.
+**Frozen model + trainable steerer alone is not the final recipe.** The warmup gate is deliberately a qualifying phase: if the steerer cannot get `eval_steerer_on` down to the configured threshold, the neural surface should not learn from it yet. Long frozen-backbone runs can starve hook gradients because the loss must propagate backward through many frozen layers to reach the steerer hooks. After the gate opens, the trainable neural surface provides the co-adaptation path the thesis needs.
 
 ### Gradient Flow
 
@@ -212,10 +212,10 @@ orthogonal_penalty = mean((normalize(steer_vectors) @ normalize(steer_vectors).T
 
 Two PPL numbers are tracked per epoch:
 
-- **eval_s (steered):** Model + steerer with compiled channel features active. Measures the full system.
-- **eval_b (baseline):** Model only, no steerer. Measures what the model learned independently.
+- **eval_steerer_on** (`eval_s` historical alias): Model + steerer with compiled channel features active. Measures the full system.
+- **eval_steerer_off** (`eval_b` historical alias): Same checkpoint with the steerer disabled. Measures what the neural model learned without runtime steering help.
 
-The gap between eval_s and eval_b represents the steerer's contribution. A large gap (eval_s << eval_b) means the steerer is providing significant signal.
+The gap between `eval_steerer_on` and `eval_steerer_off` represents the steerer's runtime contribution. A large gap means the steerer is providing significant signal.
 
 ---
 
@@ -330,7 +330,7 @@ side-by-side demo candidate rather than the end state for the 4B assistant lane.
 popular benchmark comparison: compiled-hybrid baseline with cartridge injection
 disabled versus the same checkpoint with `SuperpositionSteererV3` enabled. The
 default source is `artifacts/steerer_v4/steerer_best_s.pt`, which records
-WikiText-103 validation `eval_b=37.2111` and `eval_s=28.2080`. The exporter
+WikiText-103 validation `eval_steerer_off=37.2111` (`eval_b`) and `eval_steerer_on=28.2080` (`eval_s`). The exporter
 fails by default if the cartridge does not improve baseline perplexity, so stale
 or bad checkpoints do not quietly become demo copy.
 

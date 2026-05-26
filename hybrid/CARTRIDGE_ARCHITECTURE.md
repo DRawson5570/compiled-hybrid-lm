@@ -73,7 +73,7 @@ Mean mode works because untrained cartridges produce near-zero deltas for out-of
 
 **Model scale.** All results use Qwen2.5-1.5B. Scaling laws for cartridge effectiveness are unknown. Larger models may show smaller relative gains if their intrinsic knowledge covers more of the benchmark, or larger gains if the cartridge can inject more specialized knowledge than the base model possesses.
 
-**Custom base models.** The thesis originally targets custom DeepSeekForCausalLM models co-trained with compiled priors from scratch. Current results use off-the-shelf Qwen. The cartridge approach on a co-trained base with native 21-channel compiled features remains untested.
+**Custom base models.** The thesis targets custom DeepSeekForCausalLM models trained with fixed 21-channel compiled features and a trainable steerer/control surface. Current results use off-the-shelf Qwen. The cartridge approach on a base trained with this staged steerer warmup remains untested.
 
 ## 7. Reproducibility
 

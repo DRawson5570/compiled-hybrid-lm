@@ -20,9 +20,9 @@ LR="${LR:-}"
 STEERER_LR="${STEERER_LR:-}"
 EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-}"
 EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-}"
-DISABLE_PRIOR_AFTER_ON_PLATEAU="${DISABLE_PRIOR_AFTER_ON_PLATEAU:-}"
-FREEZE_MODEL_UNTIL_PRIOR_ON_PPL="${FREEZE_MODEL_UNTIL_PRIOR_ON_PPL:-}"
-PRIOR_ON_WARMUP_PATIENCE="${PRIOR_ON_WARMUP_PATIENCE:-}"
+DISABLE_STEERER_AFTER_PLATEAU="${DISABLE_STEERER_AFTER_PLATEAU:-${DISABLE_PRIOR_AFTER_ON_PLATEAU:-}}"
+FREEZE_MODEL_UNTIL_STEERER_PPL="${FREEZE_MODEL_UNTIL_STEERER_PPL:-${FREEZE_MODEL_UNTIL_PRIOR_ON_PPL:-}}"
+STEERER_WARMUP_PATIENCE="${STEERER_WARMUP_PATIENCE:-${PRIOR_ON_WARMUP_PATIENCE:-}}"
 CHECKPOINT="${CHECKPOINT:-}"
 OUT_DIR="${OUT_DIR:-}"
 OUT_DIR_EXPLICIT=0
@@ -57,16 +57,16 @@ Targets:
   --target local-700m-baseline
                           Full neural 700M dense baseline, no compiled steerer.
   --target local-700m-thesis
-                          Full neural 700M dense run with compiled-prior steerer active.
+                          Full neural 700M dense thesis run with steerer warmup.
   --target local-700m-baseline-zeroq
                           Local RTX 3080 700M ZeroQ run, train top neural layers only.
   --target local-700m-thesis-zeroq
-                          Local RTX 3080 700M ZeroQ run, train top neural layers + CMI steerer.
+                          Local RTX 3080 700M ZeroQ thesis run with steerer warmup.
   --target pe2-4b         pe2 GPU1 4B ZeroQ 4-bit C4-mix run.
   --target pe2-700m-baseline-zeroq
                           pe2 GPU1 700M ZeroQ run, train top neural layers only.
   --target pe2-700m-thesis-zeroq
-                          pe2 GPU1 700M ZeroQ run, train top neural layers + CMI steerer.
+                          pe2 GPU1 700M ZeroQ thesis run with steerer warmup.
 
 Common options:
   --fresh                 Start from scratch instead of resuming a checkpoint.
@@ -89,12 +89,12 @@ Common options:
   --steerer-lr X          Steerer learning rate. Default: 1e-5
   --early-stop-metric M   none, steered, blind, or either. Default: steered
   --early-stop-patience N Epochs without improvement before stopping. Default: 40
-  --disable-prior-after-on-plateau N
-                          Stop using compiled prior during training after prior-on eval is stale for N epochs.
-  --freeze-model-until-prior-on-ppl X
-                          Train only the steerer until eval_prior_on <= X. Warmup epochs do not count against --epochs.
-  --prior-on-warmup-patience N
-                          Consecutive prior-on wins required before neural training starts. Default: 1
+  --disable-steerer-after-plateau N
+                          Stop using the steerer during training after steerer-on eval is stale for N main epochs.
+  --freeze-model-until-steerer-ppl X
+                          Train only the steerer until eval_steerer_on <= X. Warmup epochs do not count against --epochs.
+  --steerer-warmup-patience N
+                          Consecutive steerer-on evals under threshold before neural training starts. Default: 1
   --port N                torchrun master port.
   --gpus LIST             CUDA_VISIBLE_DEVICES list.
   --status                Show active matching training processes and exit.
@@ -139,9 +139,9 @@ while [[ $# -gt 0 ]]; do
     --steerer-lr) STEERER_LR="$2"; shift 2 ;;
     --early-stop-metric) EARLY_STOP_METRIC="$2"; shift 2 ;;
     --early-stop-patience) EARLY_STOP_PATIENCE="$2"; shift 2 ;;
-    --disable-prior-after-on-plateau) DISABLE_PRIOR_AFTER_ON_PLATEAU="$2"; shift 2 ;;
-    --freeze-model-until-prior-on-ppl) FREEZE_MODEL_UNTIL_PRIOR_ON_PPL="$2"; shift 2 ;;
-    --prior-on-warmup-patience) PRIOR_ON_WARMUP_PATIENCE="$2"; shift 2 ;;
+    --disable-steerer-after-plateau|--disable-prior-after-on-plateau) DISABLE_STEERER_AFTER_PLATEAU="$2"; shift 2 ;;
+    --freeze-model-until-steerer-ppl|--freeze-model-until-prior-on-ppl) FREEZE_MODEL_UNTIL_STEERER_PPL="$2"; shift 2 ;;
+    --steerer-warmup-patience|--prior-on-warmup-patience) STEERER_WARMUP_PATIENCE="$2"; shift 2 ;;
     --port) PORT="$2"; shift 2 ;;
     --gpus) GPUS="$2"; shift 2 ;;
     --zeroq-path) ZEROQ_PATH="$2"; shift 2 ;;
@@ -176,9 +176,9 @@ case "$TARGET" in
     STEERER_LR="${STEERER_LR:-1e-5}"
     EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-steered}"
     EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
-    DISABLE_PRIOR_AFTER_ON_PLATEAU="${DISABLE_PRIOR_AFTER_ON_PLATEAU:-0}"
-    FREEZE_MODEL_UNTIL_PRIOR_ON_PPL="${FREEZE_MODEL_UNTIL_PRIOR_ON_PPL:-50}"
-    PRIOR_ON_WARMUP_PATIENCE="${PRIOR_ON_WARMUP_PATIENCE:-1}"
+    DISABLE_STEERER_AFTER_PLATEAU="${DISABLE_STEERER_AFTER_PLATEAU:-0}"
+    FREEZE_MODEL_UNTIL_STEERER_PPL="${FREEZE_MODEL_UNTIL_STEERER_PPL:-50}"
+    STEERER_WARMUP_PATIENCE="${STEERER_WARMUP_PATIENCE:-1}"
     PORT="${PORT:-29583}"
     GPUS="${GPUS:-0}"
     OUT_DIR="${OUT_DIR:-artifacts/train_700m_cmi_steerer_dense_c4_mix_seq512_20260526}"
@@ -195,9 +195,9 @@ case "$TARGET" in
     STEERER_LR="${STEERER_LR:-0}"
     EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-blind}"
     EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
-    DISABLE_PRIOR_AFTER_ON_PLATEAU="${DISABLE_PRIOR_AFTER_ON_PLATEAU:-0}"
-    FREEZE_MODEL_UNTIL_PRIOR_ON_PPL="${FREEZE_MODEL_UNTIL_PRIOR_ON_PPL:-}"
-    PRIOR_ON_WARMUP_PATIENCE="${PRIOR_ON_WARMUP_PATIENCE:-1}"
+    DISABLE_STEERER_AFTER_PLATEAU="${DISABLE_STEERER_AFTER_PLATEAU:-0}"
+    FREEZE_MODEL_UNTIL_STEERER_PPL="${FREEZE_MODEL_UNTIL_STEERER_PPL:-}"
+    STEERER_WARMUP_PATIENCE="${STEERER_WARMUP_PATIENCE:-1}"
     PORT="${PORT:-29584}"
     GPUS="${GPUS:-0}"
     OUT_DIR="${OUT_DIR:-artifacts/train_700m_full_dense_c4_mix_baseline_20260526}"
@@ -214,9 +214,9 @@ case "$TARGET" in
     STEERER_LR="${STEERER_LR:-1e-4}"
     EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-either}"
     EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
-    DISABLE_PRIOR_AFTER_ON_PLATEAU="${DISABLE_PRIOR_AFTER_ON_PLATEAU:-0}"
-    FREEZE_MODEL_UNTIL_PRIOR_ON_PPL="${FREEZE_MODEL_UNTIL_PRIOR_ON_PPL:-50}"
-    PRIOR_ON_WARMUP_PATIENCE="${PRIOR_ON_WARMUP_PATIENCE:-1}"
+    DISABLE_STEERER_AFTER_PLATEAU="${DISABLE_STEERER_AFTER_PLATEAU:-0}"
+    FREEZE_MODEL_UNTIL_STEERER_PPL="${FREEZE_MODEL_UNTIL_STEERER_PPL:-50}"
+    STEERER_WARMUP_PATIENCE="${STEERER_WARMUP_PATIENCE:-1}"
     PORT="${PORT:-29585}"
     GPUS="${GPUS:-0}"
     OUT_DIR="${OUT_DIR:-artifacts/train_700m_full_cmi_steerer_dense_c4_mix_thesis_20260526}"
@@ -233,9 +233,9 @@ case "$TARGET" in
     STEERER_LR="${STEERER_LR:-0}"
     EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-blind}"
     EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
-    DISABLE_PRIOR_AFTER_ON_PLATEAU="${DISABLE_PRIOR_AFTER_ON_PLATEAU:-0}"
-    FREEZE_MODEL_UNTIL_PRIOR_ON_PPL="${FREEZE_MODEL_UNTIL_PRIOR_ON_PPL:-}"
-    PRIOR_ON_WARMUP_PATIENCE="${PRIOR_ON_WARMUP_PATIENCE:-1}"
+    DISABLE_STEERER_AFTER_PLATEAU="${DISABLE_STEERER_AFTER_PLATEAU:-0}"
+    FREEZE_MODEL_UNTIL_STEERER_PPL="${FREEZE_MODEL_UNTIL_STEERER_PPL:-}"
+    STEERER_WARMUP_PATIENCE="${STEERER_WARMUP_PATIENCE:-1}"
     PORT="${PORT:-29588}"
     GPUS="${GPUS:-0}"
     OUT_DIR="${OUT_DIR:-artifacts/train_700m_top2_zeroq_4bit_c4_mix_baseline_20260526_3080}"
@@ -252,9 +252,9 @@ case "$TARGET" in
     STEERER_LR="${STEERER_LR:-1e-4}"
     EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-either}"
     EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
-    DISABLE_PRIOR_AFTER_ON_PLATEAU="${DISABLE_PRIOR_AFTER_ON_PLATEAU:-5}"
-    FREEZE_MODEL_UNTIL_PRIOR_ON_PPL="${FREEZE_MODEL_UNTIL_PRIOR_ON_PPL:-50}"
-    PRIOR_ON_WARMUP_PATIENCE="${PRIOR_ON_WARMUP_PATIENCE:-1}"
+    DISABLE_STEERER_AFTER_PLATEAU="${DISABLE_STEERER_AFTER_PLATEAU:-5}"
+    FREEZE_MODEL_UNTIL_STEERER_PPL="${FREEZE_MODEL_UNTIL_STEERER_PPL:-50}"
+    STEERER_WARMUP_PATIENCE="${STEERER_WARMUP_PATIENCE:-1}"
     PORT="${PORT:-29589}"
     GPUS="${GPUS:-0}"
     OUT_DIR="${OUT_DIR:-artifacts/train_700m_top2_cmi_steerer_zeroq_4bit_c4_mix_thesis_20260526_3080}"
@@ -271,9 +271,9 @@ case "$TARGET" in
     STEERER_LR="${STEERER_LR:-1e-5}"
     EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-steered}"
     EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
-    DISABLE_PRIOR_AFTER_ON_PLATEAU="${DISABLE_PRIOR_AFTER_ON_PLATEAU:-0}"
-    FREEZE_MODEL_UNTIL_PRIOR_ON_PPL="${FREEZE_MODEL_UNTIL_PRIOR_ON_PPL:-50}"
-    PRIOR_ON_WARMUP_PATIENCE="${PRIOR_ON_WARMUP_PATIENCE:-1}"
+    DISABLE_STEERER_AFTER_PLATEAU="${DISABLE_STEERER_AFTER_PLATEAU:-0}"
+    FREEZE_MODEL_UNTIL_STEERER_PPL="${FREEZE_MODEL_UNTIL_STEERER_PPL:-50}"
+    STEERER_WARMUP_PATIENCE="${STEERER_WARMUP_PATIENCE:-1}"
     PORT="${PORT:-29569}"
     GPUS="${GPUS:-1}"
     OUT_DIR="${OUT_DIR:-artifacts/train_4b_cmi_steerer_zeroq_4bit_c4_mix_20260526_offline_gpu1}"
@@ -290,9 +290,9 @@ case "$TARGET" in
     STEERER_LR="${STEERER_LR:-0}"
     EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-blind}"
     EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
-    DISABLE_PRIOR_AFTER_ON_PLATEAU="${DISABLE_PRIOR_AFTER_ON_PLATEAU:-0}"
-    FREEZE_MODEL_UNTIL_PRIOR_ON_PPL="${FREEZE_MODEL_UNTIL_PRIOR_ON_PPL:-}"
-    PRIOR_ON_WARMUP_PATIENCE="${PRIOR_ON_WARMUP_PATIENCE:-1}"
+    DISABLE_STEERER_AFTER_PLATEAU="${DISABLE_STEERER_AFTER_PLATEAU:-0}"
+    FREEZE_MODEL_UNTIL_STEERER_PPL="${FREEZE_MODEL_UNTIL_STEERER_PPL:-}"
+    STEERER_WARMUP_PATIENCE="${STEERER_WARMUP_PATIENCE:-1}"
     PORT="${PORT:-29586}"
     GPUS="${GPUS:-1}"
     OUT_DIR="${OUT_DIR:-artifacts/train_700m_top2_zeroq_4bit_c4_mix_baseline_20260526_gpu1}"
@@ -309,9 +309,9 @@ case "$TARGET" in
     STEERER_LR="${STEERER_LR:-1e-4}"
     EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-either}"
     EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
-    DISABLE_PRIOR_AFTER_ON_PLATEAU="${DISABLE_PRIOR_AFTER_ON_PLATEAU:-5}"
-    FREEZE_MODEL_UNTIL_PRIOR_ON_PPL="${FREEZE_MODEL_UNTIL_PRIOR_ON_PPL:-50}"
-    PRIOR_ON_WARMUP_PATIENCE="${PRIOR_ON_WARMUP_PATIENCE:-1}"
+    DISABLE_STEERER_AFTER_PLATEAU="${DISABLE_STEERER_AFTER_PLATEAU:-5}"
+    FREEZE_MODEL_UNTIL_STEERER_PPL="${FREEZE_MODEL_UNTIL_STEERER_PPL:-50}"
+    STEERER_WARMUP_PATIENCE="${STEERER_WARMUP_PATIENCE:-1}"
     PORT="${PORT:-29587}"
     GPUS="${GPUS:-1}"
     OUT_DIR="${OUT_DIR:-artifacts/train_700m_top2_cmi_steerer_zeroq_4bit_c4_mix_thesis_20260526_gpu1}"
@@ -450,10 +450,10 @@ run_local() {
     --epochs "$EPOCHS" --steps "$STEPS" --batch "$BATCH" --seq-len "$SEQ_LEN" --eval-tokens "$EVAL_TOKENS"
     --lr "$LR" --steerer-lr "$STEERER_LR"
     --early-stop-metric "$EARLY_STOP_METRIC" --early-stop-patience "$EARLY_STOP_PATIENCE"
-    --disable-prior-after-on-plateau "$DISABLE_PRIOR_AFTER_ON_PLATEAU"
+    --disable-steerer-after-plateau "$DISABLE_STEERER_AFTER_PLATEAU"
   )
-  if [[ -n "$FREEZE_MODEL_UNTIL_PRIOR_ON_PPL" ]]; then
-    cmd+=(--freeze-model-until-prior-on-ppl "$FREEZE_MODEL_UNTIL_PRIOR_ON_PPL" --prior-on-warmup-patience "$PRIOR_ON_WARMUP_PATIENCE")
+  if [[ -n "$FREEZE_MODEL_UNTIL_STEERER_PPL" ]]; then
+    cmd+=(--freeze-model-until-steerer-ppl "$FREEZE_MODEL_UNTIL_STEERER_PPL" --steerer-warmup-patience "$STEERER_WARMUP_PATIENCE")
   fi
   if [[ "$BACKEND" == "zeroq" ]]; then
     cmd+=(--zeroq-path "$ZEROQ_PATH" --compute-in-4bit)
@@ -580,10 +580,10 @@ cmd=(
   --epochs "$EPOCHS" --steps "$STEPS" --batch "$BATCH" --seq-len "$SEQ_LEN" --eval-tokens "$EVAL_TOKENS"
   --lr "$LR" --steerer-lr "$STEERER_LR"
   --early-stop-metric "$EARLY_STOP_METRIC" --early-stop-patience "$EARLY_STOP_PATIENCE"
-  --disable-prior-after-on-plateau "$DISABLE_PRIOR_AFTER_ON_PLATEAU"
+  --disable-steerer-after-plateau "$DISABLE_STEERER_AFTER_PLATEAU"
 )
-if [[ -n "$FREEZE_MODEL_UNTIL_PRIOR_ON_PPL" ]]; then
-  cmd+=(--freeze-model-until-prior-on-ppl "$FREEZE_MODEL_UNTIL_PRIOR_ON_PPL" --prior-on-warmup-patience "$PRIOR_ON_WARMUP_PATIENCE")
+if [[ -n "$FREEZE_MODEL_UNTIL_STEERER_PPL" ]]; then
+  cmd+=(--freeze-model-until-steerer-ppl "$FREEZE_MODEL_UNTIL_STEERER_PPL" --steerer-warmup-patience "$STEERER_WARMUP_PATIENCE")
 fi
 cmd+=(
   --zeroq-path /home/drawson/ZeroQ --compute-in-4bit
@@ -610,8 +610,8 @@ REMOTE
     TARGET="$TARGET" MODEL_CONFIG="$MODEL_CONFIG" BACKEND="$BACKEND" DATA_MODE="$DATA_MODE" C4_RATIO="$C4_RATIO" \
     TRAIN_SURFACE="$TRAIN_SURFACE" EPOCHS="$EPOCHS" TARGET_EPOCH="$TARGET_EPOCH" STEPS="$STEPS" BATCH="$BATCH" \
     SEQ_LEN="$SEQ_LEN" EVAL_TOKENS="$EVAL_TOKENS" LR="$LR" STEERER_LR="$STEERER_LR" \
-    EARLY_STOP_METRIC="$EARLY_STOP_METRIC" EARLY_STOP_PATIENCE="$EARLY_STOP_PATIENCE" DISABLE_PRIOR_AFTER_ON_PLATEAU="$DISABLE_PRIOR_AFTER_ON_PLATEAU" \
-    FREEZE_MODEL_UNTIL_PRIOR_ON_PPL="$FREEZE_MODEL_UNTIL_PRIOR_ON_PPL" PRIOR_ON_WARMUP_PATIENCE="$PRIOR_ON_WARMUP_PATIENCE" CHECKPOINT="$CHECKPOINT" \
+    EARLY_STOP_METRIC="$EARLY_STOP_METRIC" EARLY_STOP_PATIENCE="$EARLY_STOP_PATIENCE" DISABLE_STEERER_AFTER_PLATEAU="$DISABLE_STEERER_AFTER_PLATEAU" \
+    FREEZE_MODEL_UNTIL_STEERER_PPL="$FREEZE_MODEL_UNTIL_STEERER_PPL" STEERER_WARMUP_PATIENCE="$STEERER_WARMUP_PATIENCE" CHECKPOINT="$CHECKPOINT" \
     OUT_DIR="$OUT_DIR" PORT="$PORT" GPUS="$GPUS" REMOTE_REPO="$REMOTE_REPO" REMOTE_TORCHRUN="$REMOTE_TORCHRUN" \
     REMOTE_PYTHON="$REMOTE_PYTHON" HF_CACHE="$HF_CACHE" FRESH="$FRESH" FORCE_KILL="$FORCE_KILL" \
     DRY_RUN="$DRY_RUN" FOREGROUND="$FOREGROUND" STATUS_ONLY="$STATUS_ONLY" ALLOW_EXISTING_OUT_DIR="$ALLOW_EXISTING_OUT_DIR" \

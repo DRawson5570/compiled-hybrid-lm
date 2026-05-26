@@ -48,7 +48,7 @@ pip install torch transformers
 python3 hybrid/quickstart.py
 ```
 
-This loads a pre-built 124M C4 base model, runs a WikiText steerer cartridge, and evaluates PPL. Expected output: eval_s < 35, eval_b < 50.
+This loads a pre-built 124M C4 base model, runs a WikiText steerer cartridge, and evaluates PPL. Expected output: `eval_steerer_on < 35` (`eval_s`) and `eval_steerer_off < 50` (`eval_b`).
 
 For a larger test with ZeroQ 4-bit distributed training:
 
@@ -516,8 +516,8 @@ Features: temperature, top-p, top-k, repetition penalty, stop markers, n-gram re
 
 | Metric | Value |
 |--------|-------|
-| eval_b (standalone) | 35.6 |
-| eval_s (steered) | 28.2 |
+| eval_steerer_off (`eval_b`, standalone) | 35.6 |
+| eval_steerer_on (`eval_s`, steered) | 28.2 |
 | Training time | 4.5 hours on RTX 3080 |
 | Training tokens | 154M (3,400× fewer than GPT-2) |
 
@@ -525,14 +525,14 @@ Features: temperature, top-p, top-k, repetition penalty, stop markers, n-gram re
 
 | Metric | Epoch 1 | Epoch 23 |
 |--------|---------|----------|
-| eval_s | 44,081 | 6,027 |
+| eval_steerer_on (`eval_s`) | 44,081 | 6,027 |
 | Throughput | - | 87.7 tok/s at batch=6 |
 | GPU util | - | 95% on 2× M40 |
 | VRAM | - | 5.4 GB per GPU |
 
 ### Domain Cartridge (frozen C4 base)
 
-| Cartridge | eval_s |
+| Cartridge | eval_steerer_on (`eval_s`) |
 |-----------|--------|
 | WikiText | 28.3 |
 | Published | huggingface.co/draw5570/compiled-hybrid-lm |
