@@ -526,9 +526,9 @@ Features: temperature, top-p, top-k, repetition penalty, stop markers, n-gram re
 | Metric | Epoch 1 | Epoch 23 |
 |--------|---------|----------|
 | eval_s | 44,081 | 6,027 |
-| Throughput | 87.7 tok/s at batch=6 |
-| GPU util | 95% on 2× M40 |
-| VRAM | 5.4 GB per GPU |
+| Throughput | - | 87.7 tok/s at batch=6 |
+| GPU util | - | 95% on 2× M40 |
+| VRAM | - | 5.4 GB per GPU |
 
 ### Domain Cartridge (frozen C4 base)
 
