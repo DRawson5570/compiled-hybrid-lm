@@ -3,6 +3,7 @@ import torch
 from hybrid.hf_deepseek import DeepSeekConfig, DeepSeekForCausalLM
 from hybrid.train_4b_distributed import (
     _early_stop_metric_improved,
+    _prior_on_beats_off,
     _save_metric_checkpoints,
     _trainable_surface_for_model,
     _uses_cmi_steerer,
@@ -70,6 +71,13 @@ def test_early_stop_metric_improved_tracks_requested_metric():
     assert _early_stop_metric_improved("s", "either")
     assert not _early_stop_metric_improved("", "either")
     assert not _early_stop_metric_improved("bs", "none")
+
+
+def test_prior_on_warmup_gate_requires_prior_on_to_win_by_margin():
+    assert _prior_on_beats_off(90.0, 100.0, 0.0)
+    assert _prior_on_beats_off(90.0, 100.0, 5.0)
+    assert not _prior_on_beats_off(95.0, 100.0, 5.0)
+    assert not _prior_on_beats_off(101.0, 100.0, 0.0)
 
 
 def test_trainable_surface_names_separate_product_and_thesis_tracks():

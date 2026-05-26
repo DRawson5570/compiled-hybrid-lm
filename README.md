@@ -162,6 +162,14 @@ python hybrid/train_steerer_v4.py \
     --epochs 200 --steps 500 --batch 8
 ```
 
+For thesis runs, the neural surface should not learn under a bad early steerer. The distributed trainer supports an online steerer warmup gate: train the steerer first, keep the neural surface frozen, then unfreeze the neural surface once `eval_prior_on` beats `eval_prior_off`.
+
+```bash
+./launch_training.sh --target local-700m-thesis-zeroq --fresh
+```
+
+The thesis launcher targets enable `--freeze-model-until-prior-on-beats-off 0` by default. Baseline targets leave this unset.
+
 ### Cartridge-only (frozen model, train cartridge)
 ```bash
 python hybrid/train_steerer_code.py \
