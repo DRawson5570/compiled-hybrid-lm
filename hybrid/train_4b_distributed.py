@@ -363,6 +363,17 @@ def _prior_on_under_ppl(eval_prior_on, max_ppl):
     return math.isfinite(eval_prior_on) and eval_prior_on <= max_ppl
 
 
+def _resume_epoch_counters(ckpt):
+    if ckpt is None:
+        return 0, 0, 0, True
+    legacy_epoch = int(ckpt.get('epoch', 0) or 0)
+    neural_training_enabled = bool(ckpt.get('neural_training_enabled', True))
+    main_epoch = int(ckpt.get('main_epoch', legacy_epoch if neural_training_enabled else 0) or 0)
+    warmup_epoch = int(ckpt.get('warmup_epoch', 0 if neural_training_enabled else legacy_epoch) or 0)
+    total_epoch = int(ckpt.get('total_epoch', main_epoch + warmup_epoch) or 0)
+    return main_epoch, warmup_epoch, total_epoch, neural_training_enabled
+
+
 def load_priors(device):
     priors_dir = os.path.expanduser("~/deepseek_experiments/artifacts/compiled_priors_v3")
     word_topics = torch.load(os.path.join(priors_dir, "word_topics.pt"), map_location='cpu')
@@ -441,14 +452,17 @@ def main():
     _rank0_print(rank, f"[{args.backend}] Prepared in {time.time()-t0:.1f}s stats={handle.memory_stats()}")
 
     resume_ckpt = None
-    resume_start_epoch = 0
+    resume_main_epoch = 0
+    resume_warmup_epoch = 0
+    resume_total_epoch = 0
+    resume_neural_training_enabled = True
     resume_best_eval_s = float('inf')
     resume_best_eval_b = float('inf')
     if args.resume_checkpoint:
         resume_path = os.path.expanduser(args.resume_checkpoint)
         _rank0_print(rank, f"[resume] Loading checkpoint: {resume_path}")
         resume_ckpt = torch.load(resume_path, map_location=device, weights_only=False)
-        resume_start_epoch = int(resume_ckpt.get('epoch', 0) or 0)
+        resume_main_epoch, resume_warmup_epoch, resume_total_epoch, resume_neural_training_enabled = _resume_epoch_counters(resume_ckpt)
         resume_best_eval_s = float(resume_ckpt.get('best_eval_s', resume_ckpt.get('eval_s', float('inf'))))
         resume_best_eval_b = float(resume_ckpt.get('best_eval_b', resume_ckpt.get('eval_b', float('inf'))))
         resume_dir = os.path.dirname(resume_path)
@@ -531,14 +545,17 @@ def main():
     ] + ([{'params': steerer.parameters(), 'lr': args.steerer_lr}] if steerer is not None else []))
     best_eval_b = resume_best_eval_b
     best_eval_s = resume_best_eval_s
-    last_early_stop_improvement_epoch = resume_start_epoch
-    last_prior_on_improvement_epoch = resume_start_epoch
+    last_early_stop_improvement_epoch = resume_main_epoch
+    last_prior_on_improvement_epoch = resume_main_epoch
     prior_training_enabled = steerer is not None
     warmup_gate_enabled = steerer is not None and args.freeze_model_until_prior_on_ppl is not None
     neural_training_enabled = True
     prior_warmup_win_count = 0
+    main_epoch = resume_main_epoch
+    warmup_epoch = resume_warmup_epoch
+    total_epoch = resume_total_epoch
     if warmup_gate_enabled:
-        neural_training_enabled = bool(resume_ckpt.get('neural_training_enabled', False)) if resume_ckpt is not None else False
+        neural_training_enabled = resume_neural_training_enabled if resume_ckpt is not None else False
         prior_warmup_win_count = int(resume_ckpt.get('prior_warmup_win_count', 0)) if resume_ckpt is not None else 0
         _set_requires_grad(model_trainable_params, neural_training_enabled)
         _rank0_print(
@@ -547,10 +564,15 @@ def main():
             f"steerer warmup gate requires eval_prior_on <= {args.freeze_model_until_prior_on_ppl:g} "
             f"for {args.prior_on_warmup_patience} eval(s)",
         )
+    _rank0_print(rank, f"[phase] resume counters: main_epoch={main_epoch} warmup_epoch={warmup_epoch} total_epoch={total_epoch}; requested_main_epochs={args.epochs}")
 
-    for epoch_offset in range(1, args.epochs + 1):
-        ep = resume_start_epoch + epoch_offset
+    while main_epoch < args.epochs:
         epoch_neural_training_enabled = neural_training_enabled
+        total_epoch += 1
+        if epoch_neural_training_enabled:
+            main_epoch += 1
+        else:
+            warmup_epoch += 1
         model.train()
         total_loss = 0.0; t0 = time.time()
         loader_iter = iter(train_loader)
@@ -626,10 +648,11 @@ def main():
         if eval_s < best_eval_s:
             best_eval_s = eval_s
             status += "s"
-            last_prior_on_improvement_epoch = ep
+            if epoch_neural_training_enabled:
+                last_prior_on_improvement_epoch = main_epoch
         early_stop_improved = _early_stop_metric_improved(status, args.early_stop_metric)
-        if early_stop_improved:
-            last_early_stop_improvement_epoch = ep
+        if epoch_neural_training_enabled and early_stop_improved:
+            last_early_stop_improvement_epoch = main_epoch
 
         if warmup_gate_enabled and not neural_training_enabled:
             if _prior_on_under_ppl(eval_s, args.freeze_model_until_prior_on_ppl):
@@ -639,10 +662,12 @@ def main():
             if prior_warmup_win_count >= max(1, args.prior_on_warmup_patience):
                 neural_training_enabled = True
                 _set_requires_grad(model_trainable_params, True)
+                last_early_stop_improvement_epoch = main_epoch
+                last_prior_on_improvement_epoch = main_epoch
                 _rank0_print(
                     rank,
                     f"[phase] eval_prior_on={eval_s:.1f} reached warmup threshold <= {args.freeze_model_until_prior_on_ppl:g} "
-                    f"for {prior_warmup_win_count} eval(s); neural surface will train from next epoch",
+                    f"for {prior_warmup_win_count} eval(s); main training starts at epoch 1 next",
                 )
 
         if status:
@@ -678,10 +703,14 @@ def main():
                  'freeze_model_until_prior_on_ppl': args.freeze_model_until_prior_on_ppl,
                  'prior_on_warmup_patience': args.prior_on_warmup_patience,
                  'prior_warmup_win_count': prior_warmup_win_count,
+                 'training_phase': 'main' if epoch_neural_training_enabled else 'warmup',
+                 'main_epoch': main_epoch,
+                 'warmup_epoch': warmup_epoch,
+                 'total_epoch': total_epoch,
                  'disable_prior_after_on_plateau': args.disable_prior_after_on_plateau,
                  'early_stop_metric': args.early_stop_metric,
                  'early_stop_patience': args.early_stop_patience,
-                 'epoch': ep,
+                 'epoch': main_epoch,
                  'eval_s': eval_s,
                  'eval_b': eval_b,
                  'best_eval_s': best_eval_s,
@@ -689,7 +718,7 @@ def main():
                  'resume_checkpoint': args.resume_checkpoint},
             )
 
-        _rank0_print(rank, f"  epoch={ep:3d}  current_batch_loss={avg_loss:.4f}  current_batch_ppl={current_batch_ppl:.1f}  "
+        _rank0_print(rank, f"  main_epoch={main_epoch:3d}/{args.epochs}  warmup_epoch={warmup_epoch:3d}  total_epoch={total_epoch:3d}  current_batch_loss={avg_loss:.4f}  current_batch_ppl={current_batch_ppl:.1f}  "
                  f"eval_prior_on={eval_s:.1f}  best_prior_on={best_eval_s:.1f}  "
                      f"eval_prior_off={eval_b:.1f}  best_prior_off={best_eval_b:.1f}  "
                      f"prior_train={'on' if prior_training_enabled else 'off'}  "
@@ -700,7 +729,7 @@ def main():
             and prior_training_enabled
             and neural_training_enabled
             and args.disable_prior_after_on_plateau > 0
-            and ep - last_prior_on_improvement_epoch >= args.disable_prior_after_on_plateau
+            and main_epoch - last_prior_on_improvement_epoch >= args.disable_prior_after_on_plateau
         ):
             prior_training_enabled = False
             steerer._current_weights = None
@@ -711,12 +740,12 @@ def main():
             )
 
         if args.early_stop_metric != "none" and args.early_stop_patience > 0:
-            stale_epochs = ep - last_early_stop_improvement_epoch
+            stale_epochs = main_epoch - last_early_stop_improvement_epoch
             if stale_epochs >= args.early_stop_patience:
                 _rank0_print(
                     rank,
                     f"[early-stop] metric={args.early_stop_metric} patience={args.early_stop_patience} "
-                    f"last_improved_epoch={last_early_stop_improvement_epoch} current_epoch={ep}",
+                    f"last_improved_main_epoch={last_early_stop_improvement_epoch} current_main_epoch={main_epoch}",
                 )
                 break
 

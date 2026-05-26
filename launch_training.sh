@@ -70,8 +70,8 @@ Targets:
 
 Common options:
   --fresh                 Start from scratch instead of resuming a checkpoint.
-  --epochs N              Additional epochs to run. Local default is target - checkpoint epoch.
-  --target-epoch N        Local target absolute epoch when --epochs is omitted. Default: 1000
+  --epochs N              Main neural-training epochs to run after warmup. Local default is target - main checkpoint epoch.
+  --target-epoch N        Local target absolute main epoch when --epochs is omitted. Default: 1000
   --model-config NAME     Override target model config, e.g. 700m or 4b.
   --backend MODE          dense or zeroq.
   --train-surface NAME    Override trainable surface, e.g. cmi_steerer, top2, top2_cmi_steerer.
@@ -92,7 +92,7 @@ Common options:
   --disable-prior-after-on-plateau N
                           Stop using compiled prior during training after prior-on eval is stale for N epochs.
   --freeze-model-until-prior-on-ppl X
-                          Train only the steerer until eval_prior_on <= X.
+                          Train only the steerer until eval_prior_on <= X. Warmup epochs do not count against --epochs.
   --prior-on-warmup-patience N
                           Consecutive prior-on wins required before neural training starts. Default: 1
   --port N                torchrun master port.

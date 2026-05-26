@@ -4,6 +4,7 @@ from hybrid.hf_deepseek import DeepSeekConfig, DeepSeekForCausalLM
 from hybrid.train_4b_distributed import (
     _early_stop_metric_improved,
     _prior_on_under_ppl,
+    _resume_epoch_counters,
     _save_metric_checkpoints,
     _trainable_surface_for_model,
     _uses_cmi_steerer,
@@ -78,6 +79,13 @@ def test_prior_on_warmup_gate_uses_absolute_ppl_threshold():
     assert _prior_on_under_ppl(49.9, 50.0)
     assert not _prior_on_under_ppl(50.1, 50.0)
     assert not _prior_on_under_ppl(float("inf"), 50.0)
+
+
+def test_resume_epoch_counters_split_warmup_and_main_epochs():
+    assert _resume_epoch_counters(None) == (0, 0, 0, True)
+    assert _resume_epoch_counters({"epoch": 12}) == (12, 0, 12, True)
+    assert _resume_epoch_counters({"epoch": 7, "neural_training_enabled": False}) == (0, 7, 7, False)
+    assert _resume_epoch_counters({"epoch": 3, "main_epoch": 3, "warmup_epoch": 5, "total_epoch": 8, "neural_training_enabled": True}) == (3, 5, 8, True)
 
 
 def test_trainable_surface_names_separate_product_and_thesis_tracks():

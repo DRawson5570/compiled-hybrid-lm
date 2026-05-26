@@ -162,7 +162,7 @@ python hybrid/train_steerer_v4.py \
     --epochs 200 --steps 500 --batch 8
 ```
 
-For thesis runs, the neural surface should not learn under a bad early steerer. The distributed trainer supports an online steerer warmup gate: train the steerer first, keep the neural surface frozen, then unfreeze the neural surface once `eval_prior_on` reaches a configured PPL threshold.
+For thesis runs, the neural surface should not learn under a bad early steerer. The distributed trainer supports an online steerer warmup gate: train the steerer first, keep the neural surface frozen, then unfreeze the neural surface once `eval_prior_on` reaches a configured PPL threshold. Warmup epochs are tracked separately; `--epochs` starts at 1 only after the neural surface unfreezes.
 
 ```bash
 ./launch_training.sh --target local-700m-thesis-zeroq --fresh

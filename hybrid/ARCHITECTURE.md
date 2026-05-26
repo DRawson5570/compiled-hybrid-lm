@@ -185,7 +185,7 @@ def _steer_layer(self, h, layer_idx):
 
 ### Why Staged Online Co-Training
 
-The model and steerer are trained in one online run, but the neural surface should not start learning from a bad early steerer. Thesis targets use a warmup gate: train the steerer first while the neural surface is frozen, then unfreeze the neural surface once `eval_prior_on` reaches a configured PPL threshold. This makes the steerer a learned scaffold before the model starts absorbing its signal.
+The model and steerer are trained in one online run, but the neural surface should not start learning from a bad early steerer. Thesis targets use a warmup gate: train the steerer first while the neural surface is frozen, then unfreeze the neural surface once `eval_prior_on` reaches a configured PPL threshold. Warmup epochs are accounted separately from main neural-training epochs, so the thesis run gets the same main training budget as the baseline after the scaffold is ready.
 
 After that gate opens, the model and steerer co-train. This is not a post-hoc injection — the model learns to incorporate the steerer's signals, and the steerer learns to produce useful offsets in the model's activation space.
 
