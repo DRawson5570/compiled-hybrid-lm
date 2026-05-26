@@ -3,7 +3,7 @@ import torch
 from hybrid.hf_deepseek import DeepSeekConfig, DeepSeekForCausalLM
 from hybrid.train_4b_distributed import (
     _early_stop_metric_improved,
-    _prior_on_beats_off,
+    _prior_on_under_ppl,
     _save_metric_checkpoints,
     _trainable_surface_for_model,
     _uses_cmi_steerer,
@@ -73,11 +73,11 @@ def test_early_stop_metric_improved_tracks_requested_metric():
     assert not _early_stop_metric_improved("bs", "none")
 
 
-def test_prior_on_warmup_gate_requires_prior_on_to_win_by_margin():
-    assert _prior_on_beats_off(90.0, 100.0, 0.0)
-    assert _prior_on_beats_off(90.0, 100.0, 5.0)
-    assert not _prior_on_beats_off(95.0, 100.0, 5.0)
-    assert not _prior_on_beats_off(101.0, 100.0, 0.0)
+def test_prior_on_warmup_gate_uses_absolute_ppl_threshold():
+    assert _prior_on_under_ppl(50.0, 50.0)
+    assert _prior_on_under_ppl(49.9, 50.0)
+    assert not _prior_on_under_ppl(50.1, 50.0)
+    assert not _prior_on_under_ppl(float("inf"), 50.0)
 
 
 def test_trainable_surface_names_separate_product_and_thesis_tracks():

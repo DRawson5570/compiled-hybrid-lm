@@ -162,13 +162,13 @@ python hybrid/train_steerer_v4.py \
     --epochs 200 --steps 500 --batch 8
 ```
 
-For thesis runs, the neural surface should not learn under a bad early steerer. The distributed trainer supports an online steerer warmup gate: train the steerer first, keep the neural surface frozen, then unfreeze the neural surface once `eval_prior_on` beats `eval_prior_off`.
+For thesis runs, the neural surface should not learn under a bad early steerer. The distributed trainer supports an online steerer warmup gate: train the steerer first, keep the neural surface frozen, then unfreeze the neural surface once `eval_prior_on` reaches a configured PPL threshold.
 
 ```bash
 ./launch_training.sh --target local-700m-thesis-zeroq --fresh
 ```
 
-The thesis launcher targets enable `--freeze-model-until-prior-on-beats-off 0` by default. Baseline targets leave this unset.
+The thesis launcher targets enable `--freeze-model-until-prior-on-ppl 50` by default. Baseline targets leave this unset. Use a lower threshold only after the warmup reliably reaches 50; thresholds like 10, 5, or 2 are too strict for the first 700M ZeroQ thesis pass and can prevent neural training from ever starting.
 
 ### Cartridge-only (frozen model, train cartridge)
 ```bash

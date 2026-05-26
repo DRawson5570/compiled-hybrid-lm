@@ -359,8 +359,8 @@ def _set_requires_grad(params, enabled):
         param.requires_grad = enabled
 
 
-def _prior_on_beats_off(eval_prior_on, eval_prior_off, min_delta=0.0):
-    return math.isfinite(eval_prior_on) and math.isfinite(eval_prior_off) and eval_prior_on + min_delta < eval_prior_off
+def _prior_on_under_ppl(eval_prior_on, max_ppl):
+    return math.isfinite(eval_prior_on) and eval_prior_on <= max_ppl
 
 
 def load_priors(device):
@@ -407,10 +407,10 @@ def main():
                    help="Stop after this many epochs without improvement on --early-stop-metric. 0 disables early stopping.")
     p.add_argument("--disable-prior-after-on-plateau", type=int, default=0,
                    help="If >0, stop using the compiled prior/steerer during training after eval_prior_on has not improved for this many epochs. Eval still reports prior-on/off diagnostics.")
-    p.add_argument("--freeze-model-until-prior-on-beats-off", type=float, default=None,
-                   help="If set, train only the steerer until eval_prior_on beats eval_prior_off by this PPL margin, then unfreeze the neural surface.")
+    p.add_argument("--freeze-model-until-prior-on-ppl", type=float, default=None,
+                   help="If set, train only the steerer until eval_prior_on is at or below this PPL, then unfreeze the neural surface.")
     p.add_argument("--prior-on-warmup-patience", type=int, default=1,
-                   help="Consecutive evals where eval_prior_on beats eval_prior_off before unfreezing the neural surface.")
+                   help="Consecutive evals where eval_prior_on is at or below the warmup PPL threshold before unfreezing the neural surface.")
     args = p.parse_args()
 
     rank, world_size, local_rank, device = _init_dist()
@@ -534,7 +534,7 @@ def main():
     last_early_stop_improvement_epoch = resume_start_epoch
     last_prior_on_improvement_epoch = resume_start_epoch
     prior_training_enabled = steerer is not None
-    warmup_gate_enabled = steerer is not None and args.freeze_model_until_prior_on_beats_off is not None
+    warmup_gate_enabled = steerer is not None and args.freeze_model_until_prior_on_ppl is not None
     neural_training_enabled = True
     prior_warmup_win_count = 0
     if warmup_gate_enabled:
@@ -544,7 +544,7 @@ def main():
         _rank0_print(
             rank,
             f"[phase] neural surface starts {'unfrozen' if neural_training_enabled else 'frozen'}; "
-            f"steerer warmup gate requires eval_prior_on + {args.freeze_model_until_prior_on_beats_off:g} < eval_prior_off "
+            f"steerer warmup gate requires eval_prior_on <= {args.freeze_model_until_prior_on_ppl:g} "
             f"for {args.prior_on_warmup_patience} eval(s)",
         )
 
@@ -632,7 +632,7 @@ def main():
             last_early_stop_improvement_epoch = ep
 
         if warmup_gate_enabled and not neural_training_enabled:
-            if _prior_on_beats_off(eval_s, eval_b, args.freeze_model_until_prior_on_beats_off):
+            if _prior_on_under_ppl(eval_s, args.freeze_model_until_prior_on_ppl):
                 prior_warmup_win_count += 1
             else:
                 prior_warmup_win_count = 0
@@ -641,7 +641,7 @@ def main():
                 _set_requires_grad(model_trainable_params, True)
                 _rank0_print(
                     rank,
-                    f"[phase] eval_prior_on={eval_s:.1f} beat eval_prior_off={eval_b:.1f} "
+                    f"[phase] eval_prior_on={eval_s:.1f} reached warmup threshold <= {args.freeze_model_until_prior_on_ppl:g} "
                     f"for {prior_warmup_win_count} eval(s); neural surface will train from next epoch",
                 )
 
@@ -675,7 +675,7 @@ def main():
                  'prior_training_enabled': prior_training_enabled,
                  'neural_training_enabled': neural_training_enabled,
                  'neural_training_enabled_this_epoch': epoch_neural_training_enabled,
-                 'freeze_model_until_prior_on_beats_off': args.freeze_model_until_prior_on_beats_off,
+                 'freeze_model_until_prior_on_ppl': args.freeze_model_until_prior_on_ppl,
                  'prior_on_warmup_patience': args.prior_on_warmup_patience,
                  'prior_warmup_win_count': prior_warmup_win_count,
                  'disable_prior_after_on_plateau': args.disable_prior_after_on_plateau,

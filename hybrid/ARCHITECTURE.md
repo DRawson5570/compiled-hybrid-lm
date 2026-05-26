@@ -185,11 +185,11 @@ def _steer_layer(self, h, layer_idx):
 
 ### Why Staged Online Co-Training
 
-The model and steerer are trained in one online run, but the neural surface should not start learning from a bad early steerer. Thesis targets use a warmup gate: train the steerer first while the neural surface is frozen, then unfreeze the neural surface once `eval_prior_on` beats `eval_prior_off`. This makes the steerer a learned scaffold before the model starts absorbing its signal.
+The model and steerer are trained in one online run, but the neural surface should not start learning from a bad early steerer. Thesis targets use a warmup gate: train the steerer first while the neural surface is frozen, then unfreeze the neural surface once `eval_prior_on` reaches a configured PPL threshold. This makes the steerer a learned scaffold before the model starts absorbing its signal.
 
 After that gate opens, the model and steerer co-train. This is not a post-hoc injection — the model learns to incorporate the steerer's signals, and the steerer learns to produce useful offsets in the model's activation space.
 
-**Frozen model + trainable steerer alone is not the final recipe.** The warmup gate is deliberately a qualifying phase: if the steerer cannot make `eval_prior_on` beat `eval_prior_off`, the neural surface should not learn from it yet. Long frozen-backbone runs can starve hook gradients because the loss must propagate backward through many frozen layers to reach the steerer hooks. After the gate opens, the trainable neural surface provides the co-adaptation path the thesis needs.
+**Frozen model + trainable steerer alone is not the final recipe.** The warmup gate is deliberately a qualifying phase: if the steerer cannot get `eval_prior_on` down to the configured threshold, the neural surface should not learn from it yet. Long frozen-backbone runs can starve hook gradients because the loss must propagate backward through many frozen layers to reach the steerer hooks. After the gate opens, the trainable neural surface provides the co-adaptation path the thesis needs.
 
 ### Gradient Flow
 
