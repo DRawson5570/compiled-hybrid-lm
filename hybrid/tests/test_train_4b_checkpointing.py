@@ -1,6 +1,12 @@
 import torch
 
-from hybrid.train_4b_distributed import _early_stop_metric_improved, _save_metric_checkpoints
+from hybrid.hf_deepseek import DeepSeekConfig, DeepSeekForCausalLM
+from hybrid.train_4b_distributed import (
+    _early_stop_metric_improved,
+    _save_metric_checkpoints,
+    _trainable_surface_for_model,
+    _uses_cmi_steerer,
+)
 
 
 def test_blind_and_steered_checkpoints_are_separate(tmp_path):
@@ -64,3 +70,32 @@ def test_early_stop_metric_improved_tracks_requested_metric():
     assert _early_stop_metric_improved("s", "either")
     assert not _early_stop_metric_improved("", "either")
     assert not _early_stop_metric_improved("bs", "none")
+
+
+def test_trainable_surface_names_separate_product_and_thesis_tracks():
+    model = DeepSeekForCausalLM(DeepSeekConfig(vocab_size=32, d_model=16, n_layers=2, n_heads=4, d_ff=64, max_len=16))
+
+    assert _trainable_surface_for_model(model, "head_bias").parameter_names == ("head_bias",)
+    assert _trainable_surface_for_model(model, "cmi_steerer").parameter_names == ("head_bias",)
+
+    full_names = _trainable_surface_for_model(model, "full_cmi_steerer").parameter_names
+    assert "head_bias" in full_names
+    assert "tok_emb.weight" in full_names
+    assert "layers.0.ffn1.weight" in full_names
+    assert "layers.0.q_proj.weight" in full_names
+
+    top_names = _trainable_surface_for_model(model, "top1_cmi_steerer").parameter_names
+    assert "head_bias" in top_names
+    assert "ln_f.weight" in top_names
+    assert "layers.1.ffn1.weight" in top_names
+    assert "layers.1.q_proj.weight" in top_names
+    assert "layers.0.ffn1.weight" not in top_names
+    assert "tok_emb.weight" not in top_names
+
+    top_zeroq_names = _trainable_surface_for_model(model, "top1_cmi_steerer", "zeroq").parameter_names
+    assert "tok_emb.weight" in top_zeroq_names
+    assert "pos_emb.weight" in top_zeroq_names
+
+    assert not _uses_cmi_steerer("full")
+    assert _uses_cmi_steerer("full_cmi_steerer")
+    assert _uses_cmi_steerer("top2_cmi_steerer")

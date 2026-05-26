@@ -9,19 +9,20 @@ MODEL_CONFIG=""
 BACKEND=""
 DATA_MODE="${DATA_MODE:-c4-mix}"
 C4_RATIO="${C4_RATIO:-1.0}"
-TRAIN_SURFACE="${TRAIN_SURFACE:-cmi_steerer}"
+TRAIN_SURFACE="${TRAIN_SURFACE:-}"
 EPOCHS="${EPOCHS:-}"
 TARGET_EPOCH="${TARGET_EPOCH:-1000}"
 STEPS=""
 BATCH="${BATCH:-}"
 SEQ_LEN="${SEQ_LEN:-}"
 EVAL_TOKENS="${EVAL_TOKENS:-}"
-LR="${LR:-1e-4}"
-STEERER_LR="${STEERER_LR:-1e-5}"
-EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-steered}"
-EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
+LR="${LR:-}"
+STEERER_LR="${STEERER_LR:-}"
+EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-}"
+EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-}"
 CHECKPOINT="${CHECKPOINT:-}"
 OUT_DIR="${OUT_DIR:-}"
+OUT_DIR_EXPLICIT=0
 PORT=""
 GPUS=""
 ZEROQ_PATH="${ZEROQ_PATH:-$HOME/ZeroQ}"
@@ -39,6 +40,7 @@ FORCE_KILL=0
 DRY_RUN=0
 STATUS_ONLY=0
 SYNC=1
+ALLOW_EXISTING_OUT_DIR=0
 
 usage() {
   cat <<'USAGE'
@@ -49,7 +51,19 @@ historical; model size is selected with --model-config.
 
 Targets:
   --target local-700m     Local RTX 3080 700M dense C4-mix run. Default.
+  --target local-700m-baseline
+                          Full neural 700M dense baseline, no compiled steerer.
+  --target local-700m-thesis
+                          Full neural 700M dense run with compiled-prior steerer active.
+  --target local-700m-baseline-zeroq
+                          Local RTX 3080 700M ZeroQ run, train top neural layers only.
+  --target local-700m-thesis-zeroq
+                          Local RTX 3080 700M ZeroQ run, train top neural layers + CMI steerer.
   --target pe2-4b         pe2 GPU1 4B ZeroQ 4-bit C4-mix run.
+  --target pe2-700m-baseline-zeroq
+                          pe2 GPU1 700M ZeroQ run, train top neural layers only.
+  --target pe2-700m-thesis-zeroq
+                          pe2 GPU1 700M ZeroQ run, train top neural layers + CMI steerer.
 
 Common options:
   --fresh                 Start from scratch instead of resuming a checkpoint.
@@ -57,10 +71,13 @@ Common options:
   --target-epoch N        Local target absolute epoch when --epochs is omitted. Default: 1000
   --model-config NAME     Override target model config, e.g. 700m or 4b.
   --backend MODE          dense or zeroq.
+  --train-surface NAME    Override trainable surface, e.g. cmi_steerer, top2, top2_cmi_steerer.
   --data-mode MODE        wikitext or c4-mix. Default: c4-mix
   --c4-ratio X            C4 mixing ratio. Default: 1.0
   --checkpoint PATH       Checkpoint path on the machine where training runs.
   --out-dir PATH          Output directory on the machine where training runs.
+  --allow-existing-out-dir
+                          Allow --fresh to write into an output dir that already has checkpoints.
   --steps N               Steps per epoch.
   --batch N               Batch size. Target default: local-700m=1, pe2-4b=4
   --seq-len N             Sequence length. Target default: local-700m=512, pe2-4b=128
@@ -99,10 +116,12 @@ while [[ $# -gt 0 ]]; do
     --target-epoch) TARGET_EPOCH="$2"; shift 2 ;;
     --model-config) MODEL_CONFIG="$2"; shift 2 ;;
     --backend) BACKEND="$2"; shift 2 ;;
+    --train-surface) TRAIN_SURFACE="$2"; shift 2 ;;
     --data-mode) DATA_MODE="$2"; shift 2 ;;
     --c4-ratio) C4_RATIO="$2"; shift 2 ;;
     --checkpoint) CHECKPOINT="$2"; shift 2 ;;
-    --out-dir) OUT_DIR="$2"; shift 2 ;;
+    --out-dir) OUT_DIR="$2"; OUT_DIR_EXPLICIT=1; shift 2 ;;
+    --allow-existing-out-dir) ALLOW_EXISTING_OUT_DIR=1; shift ;;
     --steps) STEPS="$2"; shift 2 ;;
     --batch) BATCH="$2"; shift 2 ;;
     --seq-len) SEQ_LEN="$2"; shift 2 ;;
@@ -136,24 +155,130 @@ case "$TARGET" in
   local-700m)
     MODEL_CONFIG="${MODEL_CONFIG:-700m}"
     BACKEND="${BACKEND:-dense}"
+    TRAIN_SURFACE="${TRAIN_SURFACE:-cmi_steerer}"
     STEPS="${STEPS:-240}"
     BATCH="${BATCH:-1}"
     SEQ_LEN="${SEQ_LEN:-512}"
     EVAL_TOKENS="${EVAL_TOKENS:-8192}"
+    LR="${LR:-1e-4}"
+    STEERER_LR="${STEERER_LR:-1e-5}"
+    EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-steered}"
+    EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
     PORT="${PORT:-29583}"
     GPUS="${GPUS:-0}"
-    OUT_DIR="${OUT_DIR:-artifacts/train_700m_cmi_steerer_dense_c4_mix_20260526_offline}"
+    OUT_DIR="${OUT_DIR:-artifacts/train_700m_cmi_steerer_dense_c4_mix_seq512_20260526}"
+    ;;
+  local-700m-baseline)
+    MODEL_CONFIG="${MODEL_CONFIG:-700m}"
+    BACKEND="${BACKEND:-dense}"
+    TRAIN_SURFACE="${TRAIN_SURFACE:-full}"
+    STEPS="${STEPS:-120}"
+    BATCH="${BATCH:-1}"
+    SEQ_LEN="${SEQ_LEN:-128}"
+    EVAL_TOKENS="${EVAL_TOKENS:-4096}"
+    LR="${LR:-3e-5}"
+    STEERER_LR="${STEERER_LR:-0}"
+    EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-blind}"
+    EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
+    PORT="${PORT:-29584}"
+    GPUS="${GPUS:-0}"
+    OUT_DIR="${OUT_DIR:-artifacts/train_700m_full_dense_c4_mix_baseline_20260526}"
+    ;;
+  local-700m-thesis)
+    MODEL_CONFIG="${MODEL_CONFIG:-700m}"
+    BACKEND="${BACKEND:-dense}"
+    TRAIN_SURFACE="${TRAIN_SURFACE:-full_cmi_steerer}"
+    STEPS="${STEPS:-120}"
+    BATCH="${BATCH:-1}"
+    SEQ_LEN="${SEQ_LEN:-128}"
+    EVAL_TOKENS="${EVAL_TOKENS:-4096}"
+    LR="${LR:-3e-5}"
+    STEERER_LR="${STEERER_LR:-1e-4}"
+    EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-either}"
+    EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
+    PORT="${PORT:-29585}"
+    GPUS="${GPUS:-0}"
+    OUT_DIR="${OUT_DIR:-artifacts/train_700m_full_cmi_steerer_dense_c4_mix_thesis_20260526}"
+    ;;
+  local-700m-baseline-zeroq)
+    MODEL_CONFIG="${MODEL_CONFIG:-700m}"
+    BACKEND="${BACKEND:-zeroq}"
+    TRAIN_SURFACE="${TRAIN_SURFACE:-top2}"
+    STEPS="${STEPS:-80}"
+    BATCH="${BATCH:-1}"
+    SEQ_LEN="${SEQ_LEN:-128}"
+    EVAL_TOKENS="${EVAL_TOKENS:-4096}"
+    LR="${LR:-3e-5}"
+    STEERER_LR="${STEERER_LR:-0}"
+    EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-blind}"
+    EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
+    PORT="${PORT:-29588}"
+    GPUS="${GPUS:-0}"
+    OUT_DIR="${OUT_DIR:-artifacts/train_700m_top2_zeroq_4bit_c4_mix_baseline_20260526_3080}"
+    ;;
+  local-700m-thesis-zeroq)
+    MODEL_CONFIG="${MODEL_CONFIG:-700m}"
+    BACKEND="${BACKEND:-zeroq}"
+    TRAIN_SURFACE="${TRAIN_SURFACE:-top2_cmi_steerer}"
+    STEPS="${STEPS:-80}"
+    BATCH="${BATCH:-1}"
+    SEQ_LEN="${SEQ_LEN:-128}"
+    EVAL_TOKENS="${EVAL_TOKENS:-4096}"
+    LR="${LR:-3e-5}"
+    STEERER_LR="${STEERER_LR:-1e-4}"
+    EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-either}"
+    EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
+    PORT="${PORT:-29589}"
+    GPUS="${GPUS:-0}"
+    OUT_DIR="${OUT_DIR:-artifacts/train_700m_top2_cmi_steerer_zeroq_4bit_c4_mix_thesis_20260526_3080}"
     ;;
   pe2-4b)
     MODEL_CONFIG="${MODEL_CONFIG:-4b}"
     BACKEND="${BACKEND:-zeroq}"
+    TRAIN_SURFACE="${TRAIN_SURFACE:-cmi_steerer}"
     STEPS="${STEPS:-50}"
     BATCH="${BATCH:-4}"
     SEQ_LEN="${SEQ_LEN:-128}"
     EVAL_TOKENS="${EVAL_TOKENS:-2048}"
+    LR="${LR:-1e-4}"
+    STEERER_LR="${STEERER_LR:-1e-5}"
+    EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-steered}"
+    EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
     PORT="${PORT:-29569}"
     GPUS="${GPUS:-1}"
     OUT_DIR="${OUT_DIR:-artifacts/train_4b_cmi_steerer_zeroq_4bit_c4_mix_20260526_offline_gpu1}"
+    ;;
+  pe2-700m-baseline-zeroq)
+    MODEL_CONFIG="${MODEL_CONFIG:-700m}"
+    BACKEND="${BACKEND:-zeroq}"
+    TRAIN_SURFACE="${TRAIN_SURFACE:-top2}"
+    STEPS="${STEPS:-80}"
+    BATCH="${BATCH:-2}"
+    SEQ_LEN="${SEQ_LEN:-128}"
+    EVAL_TOKENS="${EVAL_TOKENS:-4096}"
+    LR="${LR:-3e-5}"
+    STEERER_LR="${STEERER_LR:-0}"
+    EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-blind}"
+    EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
+    PORT="${PORT:-29586}"
+    GPUS="${GPUS:-1}"
+    OUT_DIR="${OUT_DIR:-artifacts/train_700m_top2_zeroq_4bit_c4_mix_baseline_20260526_gpu1}"
+    ;;
+  pe2-700m-thesis-zeroq)
+    MODEL_CONFIG="${MODEL_CONFIG:-700m}"
+    BACKEND="${BACKEND:-zeroq}"
+    TRAIN_SURFACE="${TRAIN_SURFACE:-top2_cmi_steerer}"
+    STEPS="${STEPS:-80}"
+    BATCH="${BATCH:-2}"
+    SEQ_LEN="${SEQ_LEN:-128}"
+    EVAL_TOKENS="${EVAL_TOKENS:-4096}"
+    LR="${LR:-3e-5}"
+    STEERER_LR="${STEERER_LR:-1e-4}"
+    EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-either}"
+    EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
+    PORT="${PORT:-29587}"
+    GPUS="${GPUS:-1}"
+    OUT_DIR="${OUT_DIR:-artifacts/train_700m_top2_cmi_steerer_zeroq_4bit_c4_mix_thesis_20260526_gpu1}"
     ;;
   *) echo "Unknown target: $TARGET" >&2; usage >&2; exit 2 ;;
 esac
@@ -245,6 +370,16 @@ run_local() {
   fi
   if [[ -n "$matches" ]]; then
     stop_matching_pids "$matches"
+  fi
+
+  if [[ "$FRESH" == "1" && "$ALLOW_EXISTING_OUT_DIR" != "1" ]]; then
+    for existing_checkpoint in "$OUT_DIR/best_s.pt" "$OUT_DIR/best.pt" "$OUT_DIR/best_b.pt"; do
+      if [[ -e "$existing_checkpoint" ]]; then
+        echo "Error: --fresh would overwrite existing checkpoint: $existing_checkpoint" >&2
+        echo "Use --out-dir for a new experiment directory, or --allow-existing-out-dir if overwrite is intentional." >&2
+        exit 2
+      fi
+    done
   fi
 
   checkpoint_epoch_value=0
@@ -356,6 +491,16 @@ if [[ -n "$matches" ]]; then
   for _ in {1..10}; do [[ -z "$(find_matching || true)" ]] && break; sleep 1; done
 fi
 
+if [[ "$FRESH" == "1" && "$ALLOW_EXISTING_OUT_DIR" != "1" ]]; then
+  for existing_checkpoint in "$OUT_DIR/best_s.pt" "$OUT_DIR/best.pt" "$OUT_DIR/best_b.pt"; do
+    if [[ -e "$existing_checkpoint" ]]; then
+      echo "Error: --fresh would overwrite existing checkpoint: $existing_checkpoint" >&2
+      echo "Use --out-dir for a new experiment directory, or --allow-existing-out-dir if overwrite is intentional." >&2
+      exit 2
+    fi
+  done
+fi
+
 resume_args=()
 checkpoint_epoch=0
 if [[ "$FRESH" != "1" ]]; then
@@ -422,11 +567,11 @@ REMOTE
     EARLY_STOP_METRIC="$EARLY_STOP_METRIC" EARLY_STOP_PATIENCE="$EARLY_STOP_PATIENCE" CHECKPOINT="$CHECKPOINT" \
     OUT_DIR="$OUT_DIR" PORT="$PORT" GPUS="$GPUS" REMOTE_REPO="$REMOTE_REPO" REMOTE_TORCHRUN="$REMOTE_TORCHRUN" \
     REMOTE_PYTHON="$REMOTE_PYTHON" HF_CACHE="$HF_CACHE" FRESH="$FRESH" FORCE_KILL="$FORCE_KILL" \
-    DRY_RUN="$DRY_RUN" FOREGROUND="$FOREGROUND" STATUS_ONLY="$STATUS_ONLY" \
+    DRY_RUN="$DRY_RUN" FOREGROUND="$FOREGROUND" STATUS_ONLY="$STATUS_ONLY" ALLOW_EXISTING_OUT_DIR="$ALLOW_EXISTING_OUT_DIR" \
     bash "/tmp/launch_training_${USER}_$$.sh"
 }
 
 case "$TARGET" in
-  local-700m) run_local ;;
-  pe2-4b) run_remote_pe2 ;;
+  local-700m|local-700m-baseline|local-700m-thesis|local-700m-baseline-zeroq|local-700m-thesis-zeroq) run_local ;;
+  pe2-4b|pe2-700m-baseline-zeroq|pe2-700m-thesis-zeroq) run_remote_pe2 ;;
 esac

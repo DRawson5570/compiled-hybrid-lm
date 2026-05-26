@@ -314,6 +314,46 @@ def _manual_allreduce_grads(model, world_size, process_group=None):
     allreduce_trainable_grads(model, world_size, process_group=process_group)
 
 
+def _surface_names_for_train_surface(model, train_surface):
+    if train_surface in {"head_bias", "cmi_steerer"}:
+        return ["head_bias"]
+    if train_surface in {"full", "full_cmi_steerer"}:
+        return [name for name, _ in model.named_parameters()]
+    if train_surface in {"top1", "top1_cmi_steerer", "top2", "top2_cmi_steerer", "top4", "top4_cmi_steerer"}:
+        count = int(train_surface.removeprefix("top").split("_")[0])
+        n_layers = len(getattr(model, "layers"))
+        first_trainable = max(0, n_layers - count)
+        names = ["head_bias", "ln_f.weight", "ln_f.bias"]
+        for name, _ in model.named_parameters():
+            if not name.startswith("layers."):
+                continue
+            layer_idx = int(name.split(".", 2)[1])
+            if layer_idx >= first_trainable:
+                names.append(name)
+        return names
+    raise ValueError(f"unknown trainable surface: {train_surface}")
+
+
+def _trainable_surface_for_model(model, train_surface, backend="dense"):
+    names = list(_surface_names_for_train_surface(model, train_surface))
+    if backend == "zeroq":
+        # The token embedding is weight-tied as the output projection, so it is
+        # used outside the Embedding module's ZeroQ hooks. Keep it materialized.
+        names.extend(["tok_emb.weight", "pos_emb.weight"])
+    return TrainableSurface.from_names(names)
+
+
+def _apply_frozen_materialized_params(model, train_surface):
+    desired_trainable = set(_surface_names_for_train_surface(model, train_surface))
+    for name, param in model.named_parameters():
+        if name not in desired_trainable and name in {"tok_emb.weight", "pos_emb.weight"}:
+            param.requires_grad = False
+
+
+def _uses_cmi_steerer(train_surface):
+    return train_surface in {"cmi_steerer", "full_cmi_steerer", "top1_cmi_steerer", "top2_cmi_steerer", "top4_cmi_steerer"}
+
+
 def load_priors(device):
     priors_dir = os.path.expanduser("~/deepseek_experiments/artifacts/compiled_priors_v3")
     word_topics = torch.load(os.path.join(priors_dir, "word_topics.pt"), map_location='cpu')
@@ -336,7 +376,8 @@ def main():
     p.add_argument("--seq-len", type=int, default=128)
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--steerer-lr", type=float, default=1e-3)
-    p.add_argument("--train-surface", choices=["head_bias", "cmi_steerer"], default="cmi_steerer")
+    p.add_argument("--train-surface", choices=["head_bias", "cmi_steerer", "full", "full_cmi_steerer", "top1", "top1_cmi_steerer", "top2", "top2_cmi_steerer", "top4", "top4_cmi_steerer"], default="cmi_steerer",
+                   help="head_bias/full/topN train neural surfaces; *_cmi_steerer also trains the compiled-prior steerer. topN_cmi_steerer is the ZeroQ thesis track.")
     p.add_argument("--eval-tokens", type=int, default=2000)
     p.add_argument("--zeroq-path", default="~/ZeroQ")
     p.add_argument("--compute-in-4bit", action="store_true",
@@ -352,7 +393,7 @@ def main():
     p.add_argument("--out-dir", default=None,
                    help="Checkpoint directory. Defaults to artifacts/train_<config>_<surface>_<backend>[_c4_mix]")
     p.add_argument("--early-stop-metric", choices=["none", "steered", "blind", "either"], default="none",
-                   help="Metric used for patience-based early stopping. 'steered' tracks eval_s, the product path.")
+                   help="Metric used for patience-based early stopping. 'steered' tracks eval_s/eval_prior_on, the product path.")
     p.add_argument("--early-stop-patience", type=int, default=0,
                    help="Stop after this many epochs without improvement on --early-stop-metric. 0 disables early stopping.")
     args = p.parse_args()
@@ -370,7 +411,7 @@ def main():
     n_params = sum(p.numel() for p in model.parameters())
     _rank0_print(rank, f"Params: {n_params:,}")
 
-    _rank0_print(rank, f"[{args.backend}] Preparing frozen backbone...")
+    _rank0_print(rank, f"[{args.backend}] Preparing trainable surface...")
     t0 = time.time()
     if args.backend == "zeroq":
         backend = ZeroQPartitionedBackend(
@@ -380,11 +421,8 @@ def main():
         )
     else:
         backend = DenseTorchBackend(device=device)
-    handle = backend.prepare(model, TrainableSurface.head_bias_and_embeddings())
-    # Embeddings must stay materialized for weight-tied output, but should be frozen
-    # (only head_bias, ln_f, and steerer are actually trained)
-    model.tok_emb.weight.requires_grad = False
-    model.pos_emb.weight.requires_grad = False
+    handle = backend.prepare(model, _trainable_surface_for_model(model, args.train_surface, args.backend))
+    _apply_frozen_materialized_params(model, args.train_surface)
     _rank0_print(rank, f"[{args.backend}] Prepared in {time.time()-t0:.1f}s stats={handle.memory_stats()}")
 
     resume_ckpt = None
@@ -429,7 +467,7 @@ def main():
 
     steerer = None
     n_hooks = 0
-    if args.train_surface == "cmi_steerer":
+    if _uses_cmi_steerer(args.train_surface):
         _rank0_print(rank, "[build] CMI compiled-prior steerer...")
         steerer = SuperpositionSteererV3(d_model=model_cfg['d_model'], init_scale=0.01, noise_scale=0.05).to(device)
         if resume_ckpt is not None and resume_ckpt.get('steerer_state') is not None:
@@ -439,6 +477,7 @@ def main():
     model_trainable = sum(param.numel() for param in trainable_parameters(model))
     steerer_trainable = sum(param.numel() for param in steerer.parameters()) if steerer is not None else 0
     _rank0_print(rank, f"  hooks={n_hooks} model_trainable={model_trainable:,} steerer_trainable={steerer_trainable:,}")
+    _rank0_print(rank, "  metrics: eval_prior_on=validation with compiled prior/steerer active; eval_prior_off=validation with it disabled")
 
     # Load compiled priors
     gpu_fc = None
@@ -545,7 +584,9 @@ def main():
                 eb_n += cl
             eval_b = math.exp(eb_nll / max(eb_n, 1))
 
-        avg_loss = total_loss / args.steps; elapsed = time.time() - t0
+        avg_loss = total_loss / args.steps
+        current_batch_ppl = math.exp(avg_loss)
+        elapsed = time.time() - t0
         status = ""
         if eval_b < best_eval_b: best_eval_b = eval_b; status += "b"
         if eval_s < best_eval_s: best_eval_s = eval_s; status += "s"
@@ -571,6 +612,14 @@ def main():
                  'data_dir': args.data_dir,
                  'c4_ratio': args.c4_ratio,
                  'seed': args.seed,
+                 'batch': args.batch,
+                 'seq_len': args.seq_len,
+                 'eval_tokens': args.eval_tokens,
+                 'current_batch_loss': avg_loss,
+                 'current_batch_ppl': current_batch_ppl,
+                 'compiled_prior_active_during_train': steerer is not None,
+                 'eval_prior_on': eval_s,
+                 'eval_prior_off': eval_b,
                  'early_stop_metric': args.early_stop_metric,
                  'early_stop_patience': args.early_stop_patience,
                  'epoch': ep,
@@ -581,9 +630,9 @@ def main():
                  'resume_checkpoint': args.resume_checkpoint},
             )
 
-        _rank0_print(rank, f"  epoch={ep:3d}  loss={avg_loss:.4f}  ppl={math.exp(avg_loss):.1f}  "
-                     f"eval_s={eval_s:.1f}  best_s={best_eval_s:.1f}  "
-                     f"eval_b={eval_b:.1f}  best_b={best_eval_b:.1f}  [{status}]  time={elapsed:.0f}s")
+        _rank0_print(rank, f"  epoch={ep:3d}  current_batch_loss={avg_loss:.4f}  current_batch_ppl={current_batch_ppl:.1f}  "
+                 f"eval_prior_on={eval_s:.1f}  best_prior_on={best_eval_s:.1f}  "
+                 f"eval_prior_off={eval_b:.1f}  best_prior_off={best_eval_b:.1f}  [{status}]  time={elapsed:.0f}s")
 
         if args.early_stop_metric != "none" and args.early_stop_patience > 0:
             stale_epochs = ep - last_early_stop_improvement_epoch
@@ -595,7 +644,7 @@ def main():
                 )
                 break
 
-    _rank0_print(rank, f"Done. Best eval_b: {best_eval_b:.1f}  Best eval_s: {best_eval_s:.1f}")
+    _rank0_print(rank, f"Done. Best eval_prior_off: {best_eval_b:.1f}  Best eval_prior_on: {best_eval_s:.1f}")
     dist.destroy_process_group()
 
 
