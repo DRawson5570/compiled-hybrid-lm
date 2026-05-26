@@ -1,4 +1,7 @@
 # compiled-hybrid-lm
+--- THIS IS A WORK IN PROGRESS.  CHECK BACK OFTEN FOR UPDATES ---
+
+--- MOST OF THE WORK BEING DONE IS ON THE COMPILED LLM TRAINING ---
 
 > **Plug-and-play steering cartridges for zero-latency activation guidance in language models.**
 
