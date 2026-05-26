@@ -315,7 +315,7 @@ class QwenLearnedCartridgeRouter:
         with self.torch.no_grad():
             logits = self.head(embedding.unsqueeze(0))[0].float()
             mask = self.torch.tensor(
-                [cartridge_id in available_set for cartridge_id in self.cartridge_ids],
+                [cartridge_id in available_set or cartridge_id == "none" for cartridge_id in self.cartridge_ids],
                 device=logits.device,
                 dtype=self.torch.bool,
             )
