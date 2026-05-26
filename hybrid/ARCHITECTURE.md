@@ -408,3 +408,9 @@ fp16 range is ±65504. `h.pow(2)` on a hidden state with norm ~10 produces value
 ### Why co-training and not frozen model + trainable cartridge?
 
 A frozen 4.7B model cannot be meaningfully steered by a 65K-param offset module. The gradient from the loss must propagate through 40 frozen layers to reach the steerer hooks — attenuated to effectively zero. The model must co-adapt with the steerer. This was the key finding from the self-improvement failure analysis.
+
+### Why LoRA/QLoRA for External Models (Qwen, Llama, etc.)
+
+Our custom models co-train with the steerer from scratch — the model learns to accept activation offsets during formative training. External models like Qwen were trained without a steerer. Freeze them + attach steerer = gradient attenuated to zero through frozen layers.
+
+LoRA/QLoRA solves this by adding small trainable adapters as **signal bridges** — they conduct the steerer's gradient through the frozen model without modifying original weights. The adapters don't need to be large; they just provide a low-resistance path for the gradient. This is independent of model size — even a 1.5B model needs LoRA if it wasn't co-trained with a steerer.
