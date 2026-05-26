@@ -378,9 +378,62 @@ def cmd_eval(args: argparse.Namespace) -> int:
 
 
 def cmd_train(args: argparse.Namespace) -> int:
-    print("ERROR: train-cartridge is not implemented yet.", flush=True)
-    print("Use the existing cartridge harness (e.g. train_answer_cartridge) with ARC-style data.")
-    return 1
+    import torch
+    from hybrid.benchmarks.arc_train import train_arc_cartridge
+    from hybrid.cartridge_harness.qwen import QwenAdapterCartridgeRunner
+
+    device = _resolve_device(args.device)
+    print(f"Device: {device}", flush=True)
+
+    train_examples, invalid_train, _ = load_arc_dataset(
+        dataset_name=args.dataset,
+        config=args.config,
+        split=args.train_split,
+        local_jsonl=args.local_jsonl,
+        strict_data=args.strict_data,
+    )
+    if invalid_train:
+        print(f"Invalid train examples skipped: {len(invalid_train)}", flush=True)
+    if not train_examples:
+        print("No valid train examples.", flush=True)
+        return 1
+    print(f"Train examples: {len(train_examples)}", flush=True)
+
+    val_examples, invalid_val, _ = load_arc_dataset(
+        dataset_name=args.dataset,
+        config=args.config,
+        split=args.val_split,
+        local_jsonl=args.local_jsonl,
+        strict_data=args.strict_data,
+    )
+    if invalid_val:
+        print(f"Invalid val examples skipped: {len(invalid_val)}", flush=True)
+    print(f"Val examples: {len(val_examples)}", flush=True)
+
+    runner = QwenAdapterCartridgeRunner(
+        args.model,
+        device=device,
+        bottleneck=args.bottleneck,
+        cartridge_id=f"{args.config.lower().replace('-', '_')}_{get_template(args.prompt_template).hash()[:8]}",
+    )
+
+    report = train_arc_cartridge(
+        runner,
+        train_examples,
+        val_examples,
+        Path(args.out_dir),
+        template_id=args.prompt_template,
+        steps=args.steps,
+        lr=args.lr,
+        eval_every=args.eval_every,
+        temperature=args.temperature,
+        lambda_margin=args.lambda_margin,
+        seed=args.seed,
+    )
+    print(f"\nResult: best_val_acc={report['best_val_accuracy']:.4f} "
+          f"final_val_acc={report['final_val_accuracy']:.4f}", flush=True)
+    runner.cleanup()
+    return 0
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -421,15 +474,25 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     eval_p.add_argument("--adapter-dir", default=None,
                         help="Baked LoRA adapter dir for baked-lora mode")
 
-    train_p = sub.add_parser("train-cartridge", help="Train an ARC cartridge (stub)")
+    train_p = sub.add_parser("train-cartridge", help="Train an ARC cartridge with option-ranking loss")
     train_p.add_argument("--config", default="ARC-Challenge")
     train_p.add_argument("--train-split", default="train")
+    train_p.add_argument("--val-split", default="validation")
     train_p.add_argument("--model", default="Qwen/Qwen2.5-1.5B")
     train_p.add_argument("--device", default="cuda")
     train_p.add_argument("--out-dir", required=True)
     train_p.add_argument("--steps", type=int, default=500)
     train_p.add_argument("--lr", type=float, default=2e-4)
     train_p.add_argument("--eval-every", type=int, default=50)
+    train_p.add_argument("--temperature", type=float, default=1.0)
+    train_p.add_argument("--lambda-margin", type=float, default=0.0)
+    train_p.add_argument("--bottleneck", type=int, default=64)
+    train_p.add_argument("--prompt-template", default="arc_v1")
+    train_p.add_argument("--seed", type=int, default=23)
+    train_p.add_argument("--dataset", default="allenai/ai2_arc")
+    train_p.add_argument("--local-jsonl", default=None)
+    train_p.add_argument("--strict-data", action="store_true")
+    train_p.add_argument("--dtype", default="float16")
 
     return parser
 
