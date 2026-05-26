@@ -14,6 +14,9 @@ from pathlib import Path
 import torch
 
 
+HELLASWAG_CARTRIDGE_ID = "qwen-hellaswag-cartridge"
+
+
 @dataclass
 class HellaSwagExample:
     id: str
@@ -198,6 +201,131 @@ def run_hellaswag_baseline(
     return result
 
 
+def train_hellaswag_cartridge(
+    model_name: str = "Qwen/Qwen2.5-1.5B",
+    device: str = "cuda",
+    out_dir: str | Path = "",
+    steps: int = 500,
+    lr: float = 2e-4,
+    eval_every: int = 50,
+    temperature: float = 1.0,
+    train_max_examples: int = 2000,
+    val_max_examples: int = 500,
+    bottleneck: int = 64,
+    seed: int = 23,
+) -> dict:
+    import random
+    from hybrid.cartridge_harness.qwen import QwenAdapterCartridgeRunner
+
+    random.seed(seed)
+
+    train_examples = load_hellaswag_dataset(split="train", max_examples=train_max_examples)
+    val_examples = load_hellaswag_dataset(split="validation", max_examples=val_max_examples)
+    print(f"Train: {len(train_examples)}, Val: {len(val_examples)}", flush=True)
+
+    runner = QwenAdapterCartridgeRunner(
+        model_name, device=device, bottleneck=bottleneck,
+        cartridge_id=HELLASWAG_CARTRIDGE_ID,
+    )
+    runner.set_enabled(True)
+    runner.steerer.train()
+    optimizer = runner.torch.optim.AdamW(runner.steerer.parameters(), lr=lr, weight_decay=0.01)
+
+    best_acc = -1.0
+    best_state = None
+    history = []
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    for step in range(1, steps + 1):
+        ex = random.choice(train_examples)
+        correct_idx = ex.label if ex.label is not None else 0
+        endings = ex.endings[:4]
+        if len(endings) < 4:
+            endings = endings + [""] * (4 - len(endings))
+
+        ending_scores = []
+        for ending in endings:
+            full_text = f"{ex.ctx} {ending}"
+            full_ids = runner.tokenizer.encode(full_text, return_tensors="pt").to(runner.device)
+            ctx_ids = runner.tokenizer.encode(ex.ctx, return_tensors="pt")
+            answer_len = full_ids.shape[1] - ctx_ids.shape[1]
+            if answer_len <= 0:
+                ending_scores.append(runner.torch.tensor(float("-inf"), device=runner.device, requires_grad=True))
+                continue
+
+            runner.set_zero_weights(full_ids.shape[1])
+            logits = runner.hf_model(full_ids).logits.float()
+            logprobs = runner.torch.nn.functional.log_softmax(logits, dim=-1)
+
+            total_logprob = runner.torch.tensor(0.0, device=runner.device, requires_grad=True)
+            for j in range(answer_len):
+                pos = ctx_ids.shape[1] + j - 1
+                token_id = full_ids[0, pos + 1].item()
+                total_logprob = total_logprob + logprobs[0, pos, token_id]
+            score_norm = total_logprob / max(answer_len, 1)
+            ending_scores.append(score_norm)
+
+        scores_tensor = runner.torch.stack(ending_scores) / temperature
+        loss = runner.torch.nn.functional.cross_entropy(
+            scores_tensor.unsqueeze(0),
+            runner.torch.tensor([correct_idx], device=runner.device),
+        )
+        loss = loss + 0.00005 * runner.steerer.orthogonal_penalty()
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        runner.torch.nn.utils.clip_grad_norm_(runner.steerer.parameters(), 1.0)
+        optimizer.step()
+
+        if step == 1 or step % eval_every == 0 or step == steps:
+            runner.steerer.eval()
+            val_acc = _hellaswag_accuracy(runner, val_examples)
+            history.append({"step": step, "loss": float(loss.detach().cpu()), "val_accuracy": val_acc})
+            print(f"[hellaswag-train] step={step} loss={float(loss.detach().cpu()):.4f} val_acc={val_acc:.4f}", flush=True)
+            if val_acc > best_acc:
+                best_acc = val_acc
+                best_state = {k: v.detach().cpu().clone() for k, v in runner.steerer.state_dict().items()}
+                runner.torch.save(
+                    {"steerer_state": best_state, "manifest": runner.manifest.__dict__,
+                     "history": history, "val_accuracy": val_acc},
+                    out_path / "cartridge_best.pt",
+                )
+            runner.steerer.train()
+
+    if best_state:
+        runner.steerer.load_state_dict(best_state, strict=False)
+
+    (out_path / "train_config.json").write_text(json.dumps({
+        "cartridge_id": HELLASWAG_CARTRIDGE_ID,
+        "train_count": len(train_examples), "val_count": len(val_examples),
+        "steps": steps, "lr": lr, "best_val_accuracy": best_acc,
+    }, indent=2) + "\n", encoding="utf-8")
+    (out_path / "metrics.jsonl").write_text(
+        "\n".join(json.dumps(h) for h in history) + "\n", encoding="utf-8")
+
+    runner.cleanup()
+    return {"best_val_accuracy": best_acc, "artifact": str(out_path / "cartridge_best.pt")}
+
+
+def _hellaswag_accuracy(runner, examples, max_examples: int = 50) -> float:
+    correct = 0
+    total = 0
+    for ex in examples[:max_examples]:
+        if ex.label is None:
+            continue
+        scores = []
+        for ending in ex.endings[:4]:
+            norm, _, _ = score_ending_logprob(runner.hf_model, runner.tokenizer, ex.ctx, ending, runner.device)
+            scores.append(norm)
+        if all(s == float("-inf") for s in scores):
+            continue
+        pred = max(range(len(scores)), key=lambda j: scores[j])
+        total += 1
+        if pred == ex.label:
+            correct += 1
+    return correct / max(total, 1)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="HellaSwag benchmark")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -211,17 +339,34 @@ def main() -> int:
     eval_p.add_argument("--report-dir", default=None)
     eval_p.add_argument("--log-every", type=int, default=100)
 
+    train_p = sub.add_parser("train-cartridge")
+    train_p.add_argument("--model", default="Qwen/Qwen2.5-1.5B")
+    train_p.add_argument("--device", default="cuda")
+    train_p.add_argument("--out-dir", required=True)
+    train_p.add_argument("--steps", type=int, default=500)
+    train_p.add_argument("--lr", type=float, default=2e-4)
+    train_p.add_argument("--eval-every", type=int, default=50)
+    train_p.add_argument("--train-max-examples", type=int, default=2000)
+    train_p.add_argument("--val-max-examples", type=int, default=500)
+
     args = parser.parse_args()
 
-    examples = load_hellaswag_dataset(
-        dataset_name=args.dataset,
-        split=args.split,
-        max_examples=args.max_examples,
-    )
-    print(f"Loaded {len(examples)} examples from {args.dataset}/{args.split}", flush=True)
-
-    report_dir = Path(args.report_dir) if args.report_dir else None
-    run_hellaswag_baseline(examples, args.model, args.device, report_dir, args.log_every)
+    if args.command == "eval":
+        examples = load_hellaswag_dataset(
+            dataset_name=args.dataset,
+            split=args.split,
+            max_examples=args.max_examples,
+        )
+        print(f"Loaded {len(examples)} examples from {args.dataset}/{args.split}", flush=True)
+        report_dir = Path(args.report_dir) if args.report_dir else None
+        run_hellaswag_baseline(examples, args.model, args.device, report_dir, args.log_every)
+    elif args.command == "train-cartridge":
+        train_hellaswag_cartridge(
+            model_name=args.model, device=args.device, out_dir=args.out_dir,
+            steps=args.steps, lr=args.lr, eval_every=args.eval_every,
+            train_max_examples=args.train_max_examples,
+            val_max_examples=args.val_max_examples,
+        )
     return 0
 
 
