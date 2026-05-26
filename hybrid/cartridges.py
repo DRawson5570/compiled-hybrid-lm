@@ -69,9 +69,15 @@ class SteererCartridgeRack:
     avoiding hook-order coupling.
     """
 
-    def __init__(self):
+    def __init__(self, composition_mode: str = 'additive'):
         self._mounted: OrderedDict[str, MountedCartridge] = OrderedDict()
         self._hooks: list[Any] = []
+        self.composition_mode = composition_mode
+
+    def set_composition_mode(self, mode: str):
+        if mode not in {'additive', 'mean', 'chain'}:
+            raise ValueError(f'unknown composition mode {mode!r}')
+        self.composition_mode = mode
 
     def mount(self, manifest: CartridgeManifest, steerer: nn.Module,
               weight: float = 1.0, active: bool = True) -> str:
@@ -138,13 +144,26 @@ class SteererCartridgeRack:
                 hidden = output[0] if isinstance(output, tuple) else output
                 if not torch.is_tensor(hidden):
                     return output
-                total_delta = torch.zeros_like(hidden)
-                for mounted in self._mounted.values():
-                    if not mounted.active or layer_idx not in mounted.manifest.inject_layers:
-                        continue
-                    steered = mounted.steerer._steer_layer(hidden, layer_idx)
-                    total_delta = total_delta + mounted.weight * (steered - hidden)
-                result = (hidden + total_delta).to(dtype=hidden.dtype)
+                active = [
+                    mounted for mounted in self._mounted.values()
+                    if mounted.active and layer_idx in mounted.manifest.inject_layers
+                ]
+                if self.composition_mode == 'chain':
+                    result = hidden
+                    for mounted in active:
+                        steered = mounted.steerer._steer_layer(result, layer_idx)
+                        result = result + mounted.weight * (steered - result)
+                    result = result.to(dtype=hidden.dtype)
+                else:
+                    total_delta = torch.zeros_like(hidden)
+                    total_weight = 0.0
+                    for mounted in active:
+                        steered = mounted.steerer._steer_layer(hidden, layer_idx)
+                        total_delta = total_delta + mounted.weight * (steered - hidden)
+                        total_weight += abs(mounted.weight)
+                    if self.composition_mode == 'mean' and total_weight > 0:
+                        total_delta = total_delta / total_weight
+                    result = (hidden + total_delta).to(dtype=hidden.dtype)
                 if isinstance(output, tuple):
                     return (result,) + output[1:]
                 return result
