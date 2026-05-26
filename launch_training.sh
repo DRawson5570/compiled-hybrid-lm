@@ -1,0 +1,432 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
+
+TARGET="${TARGET:-local-700m}"
+MODEL_CONFIG=""
+BACKEND=""
+DATA_MODE="${DATA_MODE:-c4-mix}"
+C4_RATIO="${C4_RATIO:-1.0}"
+TRAIN_SURFACE="${TRAIN_SURFACE:-cmi_steerer}"
+EPOCHS="${EPOCHS:-}"
+TARGET_EPOCH="${TARGET_EPOCH:-1000}"
+STEPS=""
+BATCH="${BATCH:-}"
+SEQ_LEN="${SEQ_LEN:-}"
+EVAL_TOKENS="${EVAL_TOKENS:-}"
+LR="${LR:-1e-4}"
+STEERER_LR="${STEERER_LR:-1e-5}"
+EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-steered}"
+EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
+CHECKPOINT="${CHECKPOINT:-}"
+OUT_DIR="${OUT_DIR:-}"
+PORT=""
+GPUS=""
+ZEROQ_PATH="${ZEROQ_PATH:-$HOME/ZeroQ}"
+TORCHRUN="${TORCHRUN:-$ROOT_DIR/.venv/bin/torchrun}"
+PYTHON="${PYTHON:-$ROOT_DIR/.venv/bin/python}"
+LOG_DIR="${LOG_DIR:-artifacts/logs}"
+REMOTE_HOST="${REMOTE_HOST:-pe2}"
+REMOTE_REPO="${REMOTE_REPO:-/home/drawson/deepseek_experiments}"
+REMOTE_TORCHRUN="${REMOTE_TORCHRUN:-/home/drawson/local_venvs/m40_env/bin/torchrun}"
+REMOTE_PYTHON="${REMOTE_PYTHON:-/home/drawson/local_venvs/m40_env/bin/python}"
+HF_CACHE="${HF_CACHE:-/mnt/ssd-pgu3/hf_cache}"
+FOREGROUND=0
+FRESH=0
+FORCE_KILL=0
+DRY_RUN=0
+STATUS_ONLY=0
+SYNC=1
+
+usage() {
+  cat <<'USAGE'
+Usage: ./launch_training.sh [options]
+
+Single launcher for hybrid/train_4b_distributed.py. The Python trainer name is
+historical; model size is selected with --model-config.
+
+Targets:
+  --target local-700m     Local RTX 3080 700M dense C4-mix run. Default.
+  --target pe2-4b         pe2 GPU1 4B ZeroQ 4-bit C4-mix run.
+
+Common options:
+  --fresh                 Start from scratch instead of resuming a checkpoint.
+  --epochs N              Additional epochs to run. Local default is target - checkpoint epoch.
+  --target-epoch N        Local target absolute epoch when --epochs is omitted. Default: 1000
+  --model-config NAME     Override target model config, e.g. 700m or 4b.
+  --backend MODE          dense or zeroq.
+  --data-mode MODE        wikitext or c4-mix. Default: c4-mix
+  --c4-ratio X            C4 mixing ratio. Default: 1.0
+  --checkpoint PATH       Checkpoint path on the machine where training runs.
+  --out-dir PATH          Output directory on the machine where training runs.
+  --steps N               Steps per epoch.
+  --batch N               Batch size. Target default: local-700m=1, pe2-4b=4
+  --seq-len N             Sequence length. Target default: local-700m=512, pe2-4b=128
+  --eval-tokens N         Eval tokens. Target default: local-700m=8192, pe2-4b=2048
+  --lr X                  Model-surface learning rate. Default: 1e-4
+  --steerer-lr X          Steerer learning rate. Default: 1e-5
+  --early-stop-metric M   none, steered, blind, or either. Default: steered
+  --early-stop-patience N Epochs without improvement before stopping. Default: 40
+  --port N                torchrun master port.
+  --gpus LIST             CUDA_VISIBLE_DEVICES list.
+  --status                Show active matching training processes and exit.
+  --force-kill            Stop active matching processes before launching.
+  --dry-run               Print command without launching.
+  --foreground            Run attached instead of detached nohup.
+
+Remote pe2 options:
+  --remote-host HOST      Default: pe2
+  --remote-repo PATH      Default: /home/drawson/deepseek_experiments
+  --remote-torchrun PATH  Default: /home/drawson/local_venvs/m40_env/bin/torchrun
+  --remote-python PATH    Default: /home/drawson/local_venvs/m40_env/bin/python
+  --hf-cache PATH         Default: /mnt/ssd-pgu3/hf_cache
+  --no-sync               Do not rsync trainer/backend files before remote launch.
+
+Examples:
+  ./launch_training.sh --target local-700m --status
+  ./launch_training.sh --target local-700m --epochs 120 --force-kill
+  ./launch_training.sh --target pe2-4b --epochs 20 --dry-run
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --target) TARGET="$2"; shift 2 ;;
+    --fresh) FRESH=1; shift ;;
+    --epochs) EPOCHS="$2"; shift 2 ;;
+    --target-epoch) TARGET_EPOCH="$2"; shift 2 ;;
+    --model-config) MODEL_CONFIG="$2"; shift 2 ;;
+    --backend) BACKEND="$2"; shift 2 ;;
+    --data-mode) DATA_MODE="$2"; shift 2 ;;
+    --c4-ratio) C4_RATIO="$2"; shift 2 ;;
+    --checkpoint) CHECKPOINT="$2"; shift 2 ;;
+    --out-dir) OUT_DIR="$2"; shift 2 ;;
+    --steps) STEPS="$2"; shift 2 ;;
+    --batch) BATCH="$2"; shift 2 ;;
+    --seq-len) SEQ_LEN="$2"; shift 2 ;;
+    --eval-tokens) EVAL_TOKENS="$2"; shift 2 ;;
+    --lr) LR="$2"; shift 2 ;;
+    --steerer-lr) STEERER_LR="$2"; shift 2 ;;
+    --early-stop-metric) EARLY_STOP_METRIC="$2"; shift 2 ;;
+    --early-stop-patience) EARLY_STOP_PATIENCE="$2"; shift 2 ;;
+    --port) PORT="$2"; shift 2 ;;
+    --gpus) GPUS="$2"; shift 2 ;;
+    --zeroq-path) ZEROQ_PATH="$2"; shift 2 ;;
+    --torchrun) TORCHRUN="$2"; shift 2 ;;
+    --python) PYTHON="$2"; shift 2 ;;
+    --log-dir) LOG_DIR="$2"; shift 2 ;;
+    --remote-host) REMOTE_HOST="$2"; shift 2 ;;
+    --remote-repo) REMOTE_REPO="$2"; shift 2 ;;
+    --remote-torchrun) REMOTE_TORCHRUN="$2"; shift 2 ;;
+    --remote-python) REMOTE_PYTHON="$2"; shift 2 ;;
+    --hf-cache) HF_CACHE="$2"; shift 2 ;;
+    --no-sync) SYNC=0; shift ;;
+    --status) STATUS_ONLY=1; shift ;;
+    --force-kill) FORCE_KILL=1; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    --foreground) FOREGROUND=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+case "$TARGET" in
+  local-700m)
+    MODEL_CONFIG="${MODEL_CONFIG:-700m}"
+    BACKEND="${BACKEND:-dense}"
+    STEPS="${STEPS:-240}"
+    BATCH="${BATCH:-1}"
+    SEQ_LEN="${SEQ_LEN:-512}"
+    EVAL_TOKENS="${EVAL_TOKENS:-8192}"
+    PORT="${PORT:-29583}"
+    GPUS="${GPUS:-0}"
+    OUT_DIR="${OUT_DIR:-artifacts/train_700m_cmi_steerer_dense_c4_mix_20260526_offline}"
+    ;;
+  pe2-4b)
+    MODEL_CONFIG="${MODEL_CONFIG:-4b}"
+    BACKEND="${BACKEND:-zeroq}"
+    STEPS="${STEPS:-50}"
+    BATCH="${BATCH:-4}"
+    SEQ_LEN="${SEQ_LEN:-128}"
+    EVAL_TOKENS="${EVAL_TOKENS:-2048}"
+    PORT="${PORT:-29569}"
+    GPUS="${GPUS:-1}"
+    OUT_DIR="${OUT_DIR:-artifacts/train_4b_cmi_steerer_zeroq_4bit_c4_mix_20260526_offline_gpu1}"
+    ;;
+  *) echo "Unknown target: $TARGET" >&2; usage >&2; exit 2 ;;
+esac
+
+find_matching_pids_py='import os, sys
+model_config = sys.argv[1]
+out_dir = sys.argv[2]
+matches = []
+for name in os.listdir("/proc"):
+    if not name.isdigit():
+        continue
+    pid = int(name)
+    if pid == os.getpid():
+        continue
+    try:
+        raw = open(f"/proc/{pid}/cmdline", "rb").read()
+    except OSError:
+        continue
+    parts = [p.decode("utf-8", "replace") for p in raw.split(b"\0") if p]
+    joined = " ".join(parts)
+    if "hybrid/train_4b_distributed.py" not in joined and "train_4b_distributed.py" not in joined:
+        continue
+    has_config = any(parts[i] == "--model-config" and i + 1 < len(parts) and parts[i + 1] == model_config for i in range(len(parts)))
+    has_out = (not out_dir) or any(parts[i] == "--out-dir" and i + 1 < len(parts) and parts[i + 1] == out_dir for i in range(len(parts)))
+    if has_config and has_out:
+        matches.append((pid, joined))
+for pid, joined in matches:
+    print(f"{pid}\t{joined}")'
+
+find_matching_pids() {
+  "$PYTHON" -c "$find_matching_pids_py" "$MODEL_CONFIG" "$OUT_DIR"
+}
+
+stop_matching_pids() {
+  local matches remaining
+  matches="$1"
+  if [[ -z "$matches" ]]; then
+    return 0
+  fi
+  echo "$matches" | cut -f1 | while read -r pid; do
+    [[ -n "$pid" ]] && kill "$pid" 2>/dev/null || true
+  done
+  for _ in {1..10}; do
+    remaining="$(find_matching_pids || true)"
+    [[ -z "$remaining" ]] && return 0
+    sleep 1
+  done
+  remaining="$(find_matching_pids || true)"
+  if [[ -n "$remaining" ]]; then
+    echo "$remaining" | cut -f1 | while read -r pid; do
+      [[ -n "$pid" ]] && kill -9 "$pid" 2>/dev/null || true
+    done
+  fi
+}
+
+checkpoint_epoch() {
+  local python_bin="$1"
+  local checkpoint_path="$2"
+  "$python_bin" - "$checkpoint_path" "$MODEL_CONFIG" <<'PY'
+import sys, torch
+path, expected_model = sys.argv[1], sys.argv[2]
+ckpt = torch.load(path, map_location='cpu', weights_only=False)
+print(int(ckpt.get('epoch', 0) or 0))
+print(
+    f"checkpoint={path} model_config={ckpt.get('model_config')} surface={ckpt.get('train_surface')} "
+    f"backend={ckpt.get('backend')} eval_s={ckpt.get('eval_s')} eval_b={ckpt.get('eval_b')}",
+    file=sys.stderr,
+)
+if ckpt.get('model_config') != expected_model:
+    raise SystemExit(f"checkpoint model_config is not {expected_model}")
+PY
+}
+
+run_local() {
+  if [[ ! -x "$TORCHRUN" ]]; then echo "Error: torchrun not executable: $TORCHRUN" >&2; exit 2; fi
+  if [[ ! -x "$PYTHON" ]]; then echo "Error: python not executable: $PYTHON" >&2; exit 2; fi
+
+  local matches checkpoint_epoch_value resume_args log ts
+  matches="$(find_matching_pids || true)"
+  if [[ "$STATUS_ONLY" == "1" ]]; then
+    [[ -n "$matches" ]] && echo "$matches" || echo "No active $MODEL_CONFIG training process found."
+    return 0
+  fi
+  if [[ -n "$matches" && "$FORCE_KILL" != "1" ]]; then
+    echo "Refusing to launch because an active $MODEL_CONFIG run was found:" >&2
+    echo "$matches" >&2
+    echo "Use --force-kill only when you intentionally want to stop and replace it." >&2
+    exit 3
+  fi
+  if [[ -n "$matches" ]]; then
+    stop_matching_pids "$matches"
+  fi
+
+  checkpoint_epoch_value=0
+  resume_args=()
+  if [[ "$FRESH" != "1" ]]; then
+    if [[ -z "$CHECKPOINT" ]]; then
+      for candidate in "$OUT_DIR/best_s.pt" "$OUT_DIR/best.pt" "$OUT_DIR/best_b.pt"; do
+        if [[ -f "$candidate" ]]; then CHECKPOINT="$candidate"; break; fi
+      done
+    fi
+    if [[ ! -f "$CHECKPOINT" ]]; then echo "Error: checkpoint not found: $CHECKPOINT" >&2; exit 2; fi
+    checkpoint_epoch_value="$(checkpoint_epoch "$PYTHON" "$CHECKPOINT")"
+    resume_args=(--resume-checkpoint "$CHECKPOINT")
+  fi
+
+  if [[ -z "$EPOCHS" ]]; then
+    if [[ "$FRESH" == "1" ]]; then EPOCHS="$TARGET_EPOCH"; else EPOCHS=$(( TARGET_EPOCH - checkpoint_epoch_value )); fi
+  fi
+  if (( EPOCHS <= 0 )); then echo "Error: computed --epochs $EPOCHS. Pass --epochs N to continue." >&2; exit 2; fi
+
+  mkdir -p "$LOG_DIR"
+  ts="$(date +%Y%m%d_%H%M%S)"
+  log="$LOG_DIR/train_${MODEL_CONFIG}_${BACKEND}_${TARGET}_${ts}.log"
+
+  local cmd=(
+    env CUDA_VISIBLE_DEVICES="$GPUS" HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+    "$TORCHRUN"
+    --nproc_per_node=1 --nnodes=1 --node_rank=0 --master_addr=localhost --master_port="$PORT"
+    hybrid/train_4b_distributed.py
+    --backend "$BACKEND" --model-config "$MODEL_CONFIG" --train-surface "$TRAIN_SURFACE"
+    --data-mode "$DATA_MODE" --c4-ratio "$C4_RATIO" --out-dir "$OUT_DIR"
+    --epochs "$EPOCHS" --steps "$STEPS" --batch "$BATCH" --seq-len "$SEQ_LEN" --eval-tokens "$EVAL_TOKENS"
+    --lr "$LR" --steerer-lr "$STEERER_LR"
+    --early-stop-metric "$EARLY_STOP_METRIC" --early-stop-patience "$EARLY_STOP_PATIENCE"
+  )
+  if [[ "$BACKEND" == "zeroq" ]]; then
+    cmd+=(--zeroq-path "$ZEROQ_PATH" --compute-in-4bit)
+  fi
+  cmd+=("${resume_args[@]}")
+
+  echo "checkpoint_epoch=$checkpoint_epoch_value"
+  echo "run_epochs=$EPOCHS"
+  echo "target_epoch=$(( checkpoint_epoch_value + EPOCHS ))"
+  echo "log=$log"
+  printf 'cmd='; printf '%q ' "${cmd[@]}"; printf '\n'
+  if [[ "$DRY_RUN" == "1" ]]; then return 0; fi
+  if [[ "$FOREGROUND" == "1" ]]; then
+    "${cmd[@]}" 2>&1 | tee "$log"
+  else
+    nohup "${cmd[@]}" > "$log" 2>&1 &
+    echo "pid=$!"
+    echo "tail -f $log"
+  fi
+}
+
+run_remote_pe2() {
+  if [[ "$SYNC" == "1" ]]; then
+    rsync -az "$ROOT_DIR/hybrid/backends.py" "$ROOT_DIR/hybrid/train_4b_distributed.py" "$REMOTE_HOST:$REMOTE_REPO/hybrid/"
+  fi
+
+  local remote_payload
+  remote_payload="$(mktemp)"
+  cat > "$remote_payload" <<'REMOTE'
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$REMOTE_REPO"
+
+find_matching() {
+  "$REMOTE_PYTHON" - "$MODEL_CONFIG" "$OUT_DIR" <<'PY'
+import os, sys
+model_config = sys.argv[1]
+out_dir = sys.argv[2]
+matches = []
+for name in os.listdir("/proc"):
+  if not name.isdigit():
+    continue
+  pid = int(name)
+  if pid == os.getpid():
+    continue
+  try:
+    raw = open(f"/proc/{pid}/cmdline", "rb").read()
+  except OSError:
+    continue
+  parts = [p.decode("utf-8", "replace") for p in raw.split(b"\0") if p]
+  joined = " ".join(parts)
+  if "hybrid/train_4b_distributed.py" not in joined and "train_4b_distributed.py" not in joined:
+    continue
+  has_config = any(parts[i] == "--model-config" and i + 1 < len(parts) and parts[i + 1] == model_config for i in range(len(parts)))
+  has_out = (not out_dir) or any(parts[i] == "--out-dir" and i + 1 < len(parts) and parts[i + 1] == out_dir for i in range(len(parts)))
+  if has_config and has_out:
+    matches.append((pid, joined))
+for pid, joined in matches:
+  print(f"{pid}\t{joined}")
+PY
+}
+
+matches="$(find_matching || true)"
+if [[ "$STATUS_ONLY" == "1" ]]; then
+  [[ -n "$matches" ]] && echo "$matches" || echo "No active $MODEL_CONFIG training process found on $(hostname)."
+  exit 0
+fi
+if [[ -n "$matches" && "$FORCE_KILL" != "1" ]]; then
+  echo "Refusing to launch because an active $MODEL_CONFIG run was found:" >&2
+  echo "$matches" >&2
+  exit 3
+fi
+if [[ -n "$matches" ]]; then
+  echo "$matches" | cut -f1 | while read -r pid; do [[ -n "$pid" ]] && kill "$pid" 2>/dev/null || true; done
+  for _ in {1..10}; do [[ -z "$(find_matching || true)" ]] && break; sleep 1; done
+fi
+
+resume_args=()
+checkpoint_epoch=0
+if [[ "$FRESH" != "1" ]]; then
+  if [[ -z "$CHECKPOINT" ]]; then
+    for candidate in "$OUT_DIR/best_s.pt" "$OUT_DIR/best.pt" "$OUT_DIR/best_b.pt"; do
+      if [[ -f "$candidate" ]]; then CHECKPOINT="$candidate"; break; fi
+    done
+  fi
+  if [[ ! -f "$CHECKPOINT" ]]; then echo "Error: checkpoint not found: $CHECKPOINT" >&2; exit 2; fi
+  checkpoint_epoch="$($REMOTE_PYTHON - "$CHECKPOINT" "$MODEL_CONFIG" <<'PY'
+import sys, torch
+path, expected_model = sys.argv[1], sys.argv[2]
+ckpt = torch.load(path, map_location='cpu', weights_only=False)
+print(int(ckpt.get('epoch', 0) or 0))
+print(f"checkpoint={path} model_config={ckpt.get('model_config')} backend={ckpt.get('backend')} eval_s={ckpt.get('eval_s')} eval_b={ckpt.get('eval_b')}", file=sys.stderr)
+if ckpt.get('model_config') != expected_model:
+    raise SystemExit(f"checkpoint model_config is not {expected_model}")
+PY
+)"
+  resume_args=(--resume-checkpoint "$CHECKPOINT")
+fi
+if [[ -z "$EPOCHS" ]]; then
+  if [[ "$FRESH" == "1" ]]; then EPOCHS="$TARGET_EPOCH"; else EPOCHS=$(( TARGET_EPOCH - checkpoint_epoch )); fi
+fi
+if (( EPOCHS <= 0 )); then echo "Error: computed --epochs $EPOCHS. Pass --epochs N to continue." >&2; exit 2; fi
+
+mkdir -p artifacts/logs
+ts="$(date +%Y%m%d_%H%M%S)"
+log="artifacts/logs/train_${MODEL_CONFIG}_${BACKEND}_${TARGET}_${ts}.log"
+cmd=(
+  env CUDA_VISIBLE_DEVICES="$GPUS" HF_HOME="$HF_CACHE" HF_DATASETS_CACHE="$HF_CACHE/datasets" ZEROQ_DISABLE_ALL_GATHER_INTO_TENSOR=1 HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+  "$REMOTE_TORCHRUN"
+  --nproc_per_node=1 --nnodes=1 --node_rank=0 --master_addr=localhost --master_port="$PORT"
+  hybrid/train_4b_distributed.py
+  --backend "$BACKEND" --model-config "$MODEL_CONFIG" --train-surface "$TRAIN_SURFACE"
+  --data-mode "$DATA_MODE" --c4-ratio "$C4_RATIO" --out-dir "$OUT_DIR"
+  --epochs "$EPOCHS" --steps "$STEPS" --batch "$BATCH" --seq-len "$SEQ_LEN" --eval-tokens "$EVAL_TOKENS"
+  --lr "$LR" --steerer-lr "$STEERER_LR"
+  --early-stop-metric "$EARLY_STOP_METRIC" --early-stop-patience "$EARLY_STOP_PATIENCE"
+  --zeroq-path /home/drawson/ZeroQ --compute-in-4bit
+  "${resume_args[@]}"
+)
+echo "checkpoint_epoch=$checkpoint_epoch"
+echo "run_epochs=$EPOCHS"
+echo "target_epoch=$(( checkpoint_epoch + EPOCHS ))"
+echo "log=$log"
+printf 'cmd='; printf '%q ' "${cmd[@]}"; printf '\n'
+if [[ "$DRY_RUN" == "1" ]]; then exit 0; fi
+if [[ "$FOREGROUND" == "1" ]]; then
+  "${cmd[@]}" 2>&1 | tee "$log"
+else
+  nohup "${cmd[@]}" > "$log" 2>&1 &
+  echo "pid=$!"
+  echo "tail -f $REMOTE_REPO/$log"
+fi
+REMOTE
+
+  scp "$remote_payload" "$REMOTE_HOST:/tmp/launch_training_${USER}_$$.sh" >/dev/null
+  rm -f "$remote_payload"
+  ssh "$REMOTE_HOST" \
+    TARGET="$TARGET" MODEL_CONFIG="$MODEL_CONFIG" BACKEND="$BACKEND" DATA_MODE="$DATA_MODE" C4_RATIO="$C4_RATIO" \
+    TRAIN_SURFACE="$TRAIN_SURFACE" EPOCHS="$EPOCHS" TARGET_EPOCH="$TARGET_EPOCH" STEPS="$STEPS" BATCH="$BATCH" \
+    SEQ_LEN="$SEQ_LEN" EVAL_TOKENS="$EVAL_TOKENS" LR="$LR" STEERER_LR="$STEERER_LR" \
+    EARLY_STOP_METRIC="$EARLY_STOP_METRIC" EARLY_STOP_PATIENCE="$EARLY_STOP_PATIENCE" CHECKPOINT="$CHECKPOINT" \
+    OUT_DIR="$OUT_DIR" PORT="$PORT" GPUS="$GPUS" REMOTE_REPO="$REMOTE_REPO" REMOTE_TORCHRUN="$REMOTE_TORCHRUN" \
+    REMOTE_PYTHON="$REMOTE_PYTHON" HF_CACHE="$HF_CACHE" FRESH="$FRESH" FORCE_KILL="$FORCE_KILL" \
+    DRY_RUN="$DRY_RUN" FOREGROUND="$FOREGROUND" STATUS_ONLY="$STATUS_ONLY" \
+    bash "/tmp/launch_training_${USER}_$$.sh"
+}
+
+case "$TARGET" in
+  local-700m) run_local ;;
+  pe2-4b) run_remote_pe2 ;;
+esac

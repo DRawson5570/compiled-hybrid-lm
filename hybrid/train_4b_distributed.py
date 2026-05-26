@@ -4,7 +4,7 @@ Usage:
   torchrun --nproc_per_node=2 --master_addr=localhost --master_port=29500 \
            train_4b_distributed.py --backend zeroq --epochs 100 --batch 2
 """
-import argparse, os, sys, socket, time, math, pickle
+import argparse, os, sys, socket, time, math, pickle, random
 from collections import defaultdict
 import torch, torch.distributed as dist
 import torch.nn.functional as F
@@ -54,6 +54,120 @@ class StreamingSteererDatasetV4(Dataset):
         y = self.train_ids[start + 1:start + self.seq_len + 1]
         channels = FastNgramFeatures(self.vocab_size)
         return x, y, compute_cpu_features(x.tolist(), channels)
+
+
+class C4MixedSteererDataset(torch.utils.data.IterableDataset):
+    def __init__(self, wt_train_ids, seq_len, vocab_size, c4_ratio=0.85, seed=42):
+        self.wt_train_ids = wt_train_ids
+        self.seq_len = seq_len
+        self.vocab_size = int(vocab_size)
+        self.c4_ratio = float(c4_ratio)
+        self.seed = int(seed)
+
+    def _local_c4_files(self):
+        import glob, json
+
+        roots = []
+        datasets_cache = os.environ.get("HF_DATASETS_CACHE")
+        if datasets_cache:
+            roots.append(datasets_cache)
+        hf_home = os.environ.get("HF_HOME")
+        if hf_home:
+            roots.append(os.path.join(hf_home, "datasets"))
+        roots.append(os.path.expanduser("~/deepseek_experiments/artifacts/hf_cache/datasets"))
+
+        files = []
+        seen = set()
+        for root in roots:
+            downloads_dir = os.path.join(os.path.expanduser(root), "downloads")
+            for meta_path in glob.glob(os.path.join(downloads_dir, "*.json")):
+                data_path = meta_path[:-5]
+                if data_path in seen or not os.path.exists(data_path):
+                    continue
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as handle:
+                        meta = json.load(handle)
+                except Exception:
+                    continue
+                url = str(meta.get("url", ""))
+                if "/en/c4-train." not in url or not url.endswith(".json.gz"):
+                    continue
+                seen.add(data_path)
+                files.append(data_path)
+        return sorted(files)
+
+    def _iter_local_c4_texts(self, files, rng, worker_id, num_workers):
+        import gzip, json
+
+        while True:
+            shuffled = list(files)
+            rng.shuffle(shuffled)
+            worker_files = shuffled[worker_id::max(1, num_workers)] or shuffled
+            for path in worker_files:
+                try:
+                    with gzip.open(path, "rt", encoding="utf-8") as handle:
+                        for line in handle:
+                            try:
+                                text = (json.loads(line).get("text") or "").strip()
+                            except json.JSONDecodeError:
+                                continue
+                            if text:
+                                yield text
+                except OSError:
+                    continue
+
+    def __iter__(self):
+        from datasets import load_dataset
+        from torch.utils.data import get_worker_info
+        from transformers import AutoTokenizer
+
+        worker = get_worker_info()
+        worker_id = worker.id if worker is not None else 0
+        num_workers = worker.num_workers if worker is not None else 1
+        rng = random.Random(self.seed + worker_id * 1009)
+        torch_gen = torch.Generator().manual_seed(self.seed + worker_id * 9176)
+        tokenizer = AutoTokenizer.from_pretrained("gpt2")
+        local_c4_files = self._local_c4_files()
+        if local_c4_files:
+            c4_iter = self._iter_local_c4_texts(local_c4_files, rng, worker_id, num_workers)
+            c4_ds = None
+        else:
+            c4_ds = load_dataset("allenai/c4", "en", split="train", streaming=True)
+            c4_iter = iter(c4_ds.shuffle(seed=self.seed + worker_id, buffer_size=10000))
+        token_buffer = []
+        channels = FastNgramFeatures(self.vocab_size)
+
+        while True:
+            while len(token_buffer) < (self.seq_len + 1) * 4:
+                use_c4 = rng.random() < self.c4_ratio
+                if use_c4:
+                    try:
+                        example = next(c4_iter)
+                    except StopIteration:
+                        if c4_ds is None:
+                            c4_iter = self._iter_local_c4_texts(local_c4_files, rng, worker_id, num_workers)
+                        else:
+                            c4_iter = iter(c4_ds.shuffle(seed=rng.randrange(2**32), buffer_size=10000))
+                        continue
+                    text = example if isinstance(example, str) else (example.get("text") or "").strip()
+                    if not text:
+                        continue
+                    ids = tokenizer.encode(text[:2000], add_special_tokens=False, truncation=True, max_length=1024)
+                    if ids:
+                        token_buffer.extend(ids)
+                else:
+                    max_start = max(1, len(self.wt_train_ids) - self.seq_len * 2 - 1)
+                    start = torch.randint(0, max_start, (1,), generator=torch_gen).item()
+                    token_buffer.extend(self.wt_train_ids[start:start + self.seq_len * 2].tolist())
+
+            max_start = max(1, len(token_buffer) - self.seq_len - 1)
+            start = torch.randint(0, max_start, (1,), generator=torch_gen).item()
+            span = token_buffer[start:start + self.seq_len + 1]
+            x = torch.tensor(span[:-1], dtype=torch.long)
+            y = torch.tensor(span[1:], dtype=torch.long)
+            consumed = start + self.seq_len + 1
+            token_buffer = token_buffer[max(0, consumed - self.seq_len * 2):]
+            yield x, y, compute_cpu_features(x.tolist(), channels)
 
 
 class FastNgramFeatures:
@@ -163,6 +277,39 @@ def _rank0_print(rank, msg):
     if rank == 0: print(msg, flush=True)
 
 
+def _checkpoint_targets_for_status(out_dir, status):
+    targets = []
+    if "b" in status:
+        targets.append((os.path.join(out_dir, "best_b.pt"), "blind_best"))
+    if "s" in status:
+        targets.append((os.path.join(out_dir, "best_s.pt"), "steered_best"))
+        targets.append((os.path.join(out_dir, "best.pt"), "legacy_steered_best"))
+    return targets
+
+
+def _save_metric_checkpoints(out_dir, status, payload):
+    os.makedirs(out_dir, exist_ok=True)
+    written = []
+    for path, checkpoint_kind in _checkpoint_targets_for_status(out_dir, status):
+        checkpoint_payload = dict(payload)
+        checkpoint_payload["checkpoint_kind"] = checkpoint_kind
+        torch.save(checkpoint_payload, path)
+        written.append(path)
+    return written
+
+
+def _early_stop_metric_improved(status, metric):
+    if metric == "none":
+        return False
+    if metric == "steered":
+        return "s" in status
+    if metric == "blind":
+        return "b" in status
+    if metric == "either":
+        return bool(status)
+    raise ValueError(f"unknown early-stop metric: {metric}")
+
+
 def _manual_allreduce_grads(model, world_size, process_group=None):
     allreduce_trainable_grads(model, world_size, process_group=process_group)
 
@@ -196,6 +343,18 @@ def main():
                    help="Convert frozen ZeroQ Linear layers to native bitsandbytes Linear4bit after partitioning")
     p.add_argument("--resume-checkpoint", default=None,
                    help="Resume model and steerer weights from a previous train_4b_distributed best.pt")
+    p.add_argument("--data-mode", choices=["wikitext", "c4-mix"], default="wikitext")
+    p.add_argument("--data-dir", default="~/deepseek_experiments/artifacts/wikitext_gpt2",
+                   help="Directory containing train_ids.pt and validation_ids.pt for wikitext mode and eval")
+    p.add_argument("--c4-ratio", type=float, default=0.85,
+                   help="Fraction of C4 examples in c4-mix training mode; remaining examples come from data-dir train_ids.pt")
+    p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--out-dir", default=None,
+                   help="Checkpoint directory. Defaults to artifacts/train_<config>_<surface>_<backend>[_c4_mix]")
+    p.add_argument("--early-stop-metric", choices=["none", "steered", "blind", "either"], default="none",
+                   help="Metric used for patience-based early stopping. 'steered' tracks eval_s, the product path.")
+    p.add_argument("--early-stop-patience", type=int, default=0,
+                   help="Stop after this many epochs without improvement on --early-stop-metric. 0 disables early stopping.")
     args = p.parse_args()
 
     rank, world_size, local_rank, device = _init_dist()
@@ -237,8 +396,23 @@ def main():
         _rank0_print(rank, f"[resume] Loading checkpoint: {resume_path}")
         resume_ckpt = torch.load(resume_path, map_location=device, weights_only=False)
         resume_start_epoch = int(resume_ckpt.get('epoch', 0) or 0)
-        resume_best_eval_s = float(resume_ckpt.get('eval_s', float('inf')))
-        resume_best_eval_b = float(resume_ckpt.get('eval_b', float('inf')))
+        resume_best_eval_s = float(resume_ckpt.get('best_eval_s', resume_ckpt.get('eval_s', float('inf'))))
+        resume_best_eval_b = float(resume_ckpt.get('best_eval_b', resume_ckpt.get('eval_b', float('inf'))))
+        resume_dir = os.path.dirname(resume_path)
+        for filename, key, label in (("best_s.pt", "eval_s", "steered"), ("best_b.pt", "eval_b", "blind")):
+            metric_path = os.path.join(resume_dir, filename)
+            if not os.path.exists(metric_path):
+                continue
+            try:
+                metric_ckpt = torch.load(metric_path, map_location='cpu', weights_only=False)
+                metric_value = float(metric_ckpt.get(key, float('inf')))
+            except Exception as exc:
+                _rank0_print(rank, f"[resume] could not read {label} metric checkpoint {metric_path}: {exc}")
+                continue
+            if label == "steered":
+                resume_best_eval_s = min(resume_best_eval_s, metric_value)
+            else:
+                resume_best_eval_b = min(resume_best_eval_b, metric_value)
         state_dict = resume_ckpt.get('state_dict')
         if state_dict:
             try:
@@ -278,13 +452,22 @@ def main():
 
     # Load training data
     _rank0_print(rank, "[load] Data...")
-    train_ids = torch.load(
-        os.path.expanduser("~/deepseek_experiments/artifacts/wikitext_gpt2/train_ids.pt"))
-    val_ids = torch.load(
-        os.path.expanduser("~/deepseek_experiments/artifacts/wikitext_gpt2/validation_ids.pt"))
-    _rank0_print(rank, f"  Train: {len(train_ids):,}  Val: {len(val_ids):,}")
+    data_dir = os.path.expanduser(args.data_dir)
+    train_ids = torch.load(os.path.join(data_dir, "train_ids.pt"), weights_only=False).long()
+    val_ids = torch.load(os.path.join(data_dir, "validation_ids.pt"), weights_only=False).long()
+    _rank0_print(rank, f"  Data mode: {args.data_mode}  data_dir={data_dir}")
+    _rank0_print(rank, f"  Train/ref: {len(train_ids):,}  Val: {len(val_ids):,}")
 
-    train_dataset = StreamingSteererDatasetV4(train_ids=train_ids, seq_len=args.seq_len, V=V)
+    if args.data_mode == "c4-mix":
+        train_dataset = C4MixedSteererDataset(
+            wt_train_ids=train_ids,
+            seq_len=args.seq_len,
+            vocab_size=V,
+            c4_ratio=args.c4_ratio,
+            seed=args.seed + rank * 100000,
+        )
+    else:
+        train_dataset = StreamingSteererDatasetV4(train_ids=train_ids, seq_len=args.seq_len, V=V)
     train_loader = DataLoader(train_dataset, batch_size=args.batch,
                               num_workers=2, pin_memory=True, drop_last=True)
 
@@ -293,6 +476,7 @@ def main():
     ] + ([{'params': steerer.parameters(), 'lr': args.steerer_lr}] if steerer is not None else []))
     best_eval_b = resume_best_eval_b
     best_eval_s = resume_best_eval_s
+    last_early_stop_improvement_epoch = resume_start_epoch
 
     for epoch_offset in range(1, args.epochs + 1):
         ep = resume_start_epoch + epoch_offset
@@ -365,26 +549,51 @@ def main():
         status = ""
         if eval_b < best_eval_b: best_eval_b = eval_b; status += "b"
         if eval_s < best_eval_s: best_eval_s = eval_s; status += "s"
+        early_stop_improved = _early_stop_metric_improved(status, args.early_stop_metric)
+        if early_stop_improved:
+            last_early_stop_improvement_epoch = ep
         if status:
             backend_name = f"{args.backend}_4bit" if args.compute_in_4bit else args.backend
+            default_suffix = "_c4_mix" if args.data_mode == "c4-mix" else ""
             out_dir = os.path.expanduser(
-                f"~/deepseek_experiments/artifacts/train_{args.model_config}_{args.train_surface}_{backend_name}"
+                args.out_dir or f"~/deepseek_experiments/artifacts/train_{args.model_config}_{args.train_surface}_{backend_name}{default_suffix}"
             )
-            os.makedirs(out_dir, exist_ok=True)
-            torch.save({'state_dict': model.state_dict(),
-                        'steerer_state': steerer.state_dict() if steerer is not None else None,
-                        'backend': args.backend,
-                        'compute_in_4bit': args.compute_in_4bit,
-                        'model_config': args.model_config,
-                        'train_surface': args.train_surface,
-                        'epoch': ep,
-                        'eval_s': eval_s,
-                        'eval_b': eval_b,
-                        'resume_checkpoint': args.resume_checkpoint},
-                       os.path.join(out_dir, 'best.pt'))
+            _save_metric_checkpoints(
+                out_dir,
+                status,
+                {'state_dict': model.state_dict(),
+                 'steerer_state': steerer.state_dict() if steerer is not None else None,
+                 'backend': args.backend,
+                 'compute_in_4bit': args.compute_in_4bit,
+                 'model_config': args.model_config,
+                 'train_surface': args.train_surface,
+                 'data_mode': args.data_mode,
+                 'data_dir': args.data_dir,
+                 'c4_ratio': args.c4_ratio,
+                 'seed': args.seed,
+                 'early_stop_metric': args.early_stop_metric,
+                 'early_stop_patience': args.early_stop_patience,
+                 'epoch': ep,
+                 'eval_s': eval_s,
+                 'eval_b': eval_b,
+                 'best_eval_s': best_eval_s,
+                 'best_eval_b': best_eval_b,
+                 'resume_checkpoint': args.resume_checkpoint},
+            )
 
         _rank0_print(rank, f"  epoch={ep:3d}  loss={avg_loss:.4f}  ppl={math.exp(avg_loss):.1f}  "
-                     f"eval_s={eval_s:.1f}  eval_b={eval_b:.1f}  best_b={best_eval_b:.1f}  [{status}]  time={elapsed:.0f}s")
+                     f"eval_s={eval_s:.1f}  best_s={best_eval_s:.1f}  "
+                     f"eval_b={eval_b:.1f}  best_b={best_eval_b:.1f}  [{status}]  time={elapsed:.0f}s")
+
+        if args.early_stop_metric != "none" and args.early_stop_patience > 0:
+            stale_epochs = ep - last_early_stop_improvement_epoch
+            if stale_epochs >= args.early_stop_patience:
+                _rank0_print(
+                    rank,
+                    f"[early-stop] metric={args.early_stop_metric} patience={args.early_stop_patience} "
+                    f"last_improved_epoch={last_early_stop_improvement_epoch} current_epoch={ep}",
+                )
+                break
 
     _rank0_print(rank, f"Done. Best eval_b: {best_eval_b:.1f}  Best eval_s: {best_eval_s:.1f}")
     dist.destroy_process_group()
