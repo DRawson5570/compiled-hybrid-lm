@@ -396,6 +396,8 @@ def main():
                    help="Metric used for patience-based early stopping. 'steered' tracks eval_s/eval_prior_on, the product path.")
     p.add_argument("--early-stop-patience", type=int, default=0,
                    help="Stop after this many epochs without improvement on --early-stop-metric. 0 disables early stopping.")
+    p.add_argument("--disable-prior-after-on-plateau", type=int, default=0,
+                   help="If >0, stop using the compiled prior/steerer during training after eval_prior_on has not improved for this many epochs. Eval still reports prior-on/off diagnostics.")
     args = p.parse_args()
 
     rank, world_size, local_rank, device = _init_dist()
@@ -516,6 +518,8 @@ def main():
     best_eval_b = resume_best_eval_b
     best_eval_s = resume_best_eval_s
     last_early_stop_improvement_epoch = resume_start_epoch
+    last_prior_on_improvement_epoch = resume_start_epoch
+    prior_training_enabled = steerer is not None
 
     for epoch_offset in range(1, args.epochs + 1):
         ep = resume_start_epoch + epoch_offset
@@ -529,13 +533,15 @@ def main():
             y = y.to(device, non_blocking=True)
             w_cpu = w_cpu.to(device, non_blocking=True)
 
-            if steerer is not None:
+            if steerer is not None and prior_training_enabled:
                 w_gpu = gpu_fc.compute_features(x)
                 w_gpu[:, :, 0:9] = w_cpu[:, :, :9]
                 steerer.set_weights(w_gpu)
+            elif steerer is not None:
+                steerer._current_weights = None
             out = model(x)
             loss = F.cross_entropy(out.logits.reshape(-1, V), y.reshape(-1))
-            if steerer is not None:
+            if steerer is not None and prior_training_enabled:
                 loss = loss + 0.001 * steerer.orthogonal_penalty()
 
             opt.zero_grad(set_to_none=True)
@@ -589,7 +595,10 @@ def main():
         elapsed = time.time() - t0
         status = ""
         if eval_b < best_eval_b: best_eval_b = eval_b; status += "b"
-        if eval_s < best_eval_s: best_eval_s = eval_s; status += "s"
+        if eval_s < best_eval_s:
+            best_eval_s = eval_s
+            status += "s"
+            last_prior_on_improvement_epoch = ep
         early_stop_improved = _early_stop_metric_improved(status, args.early_stop_metric)
         if early_stop_improved:
             last_early_stop_improvement_epoch = ep
@@ -620,6 +629,8 @@ def main():
                  'compiled_prior_active_during_train': steerer is not None,
                  'eval_prior_on': eval_s,
                  'eval_prior_off': eval_b,
+                 'prior_training_enabled': prior_training_enabled,
+                 'disable_prior_after_on_plateau': args.disable_prior_after_on_plateau,
                  'early_stop_metric': args.early_stop_metric,
                  'early_stop_patience': args.early_stop_patience,
                  'epoch': ep,
@@ -632,7 +643,22 @@ def main():
 
         _rank0_print(rank, f"  epoch={ep:3d}  current_batch_loss={avg_loss:.4f}  current_batch_ppl={current_batch_ppl:.1f}  "
                  f"eval_prior_on={eval_s:.1f}  best_prior_on={best_eval_s:.1f}  "
-                 f"eval_prior_off={eval_b:.1f}  best_prior_off={best_eval_b:.1f}  [{status}]  time={elapsed:.0f}s")
+                     f"eval_prior_off={eval_b:.1f}  best_prior_off={best_eval_b:.1f}  "
+                     f"prior_train={'on' if prior_training_enabled else 'off'}  [{status}]  time={elapsed:.0f}s")
+
+        if (
+            steerer is not None
+            and prior_training_enabled
+            and args.disable_prior_after_on_plateau > 0
+            and ep - last_prior_on_improvement_epoch >= args.disable_prior_after_on_plateau
+        ):
+            prior_training_enabled = False
+            steerer._current_weights = None
+            _rank0_print(
+                rank,
+                f"[phase] eval_prior_on plateaued for {args.disable_prior_after_on_plateau} epochs; "
+                "compiled prior/steerer disabled for subsequent training epochs",
+            )
 
         if args.early_stop_metric != "none" and args.early_stop_patience > 0:
             stale_epochs = ep - last_early_stop_improvement_epoch

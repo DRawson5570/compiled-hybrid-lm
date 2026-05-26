@@ -20,6 +20,7 @@ LR="${LR:-}"
 STEERER_LR="${STEERER_LR:-}"
 EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-}"
 EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-}"
+DISABLE_PRIOR_AFTER_ON_PLATEAU="${DISABLE_PRIOR_AFTER_ON_PLATEAU:-}"
 CHECKPOINT="${CHECKPOINT:-}"
 OUT_DIR="${OUT_DIR:-}"
 OUT_DIR_EXPLICIT=0
@@ -86,6 +87,8 @@ Common options:
   --steerer-lr X          Steerer learning rate. Default: 1e-5
   --early-stop-metric M   none, steered, blind, or either. Default: steered
   --early-stop-patience N Epochs without improvement before stopping. Default: 40
+  --disable-prior-after-on-plateau N
+                          Stop using compiled prior during training after prior-on eval is stale for N epochs.
   --port N                torchrun master port.
   --gpus LIST             CUDA_VISIBLE_DEVICES list.
   --status                Show active matching training processes and exit.
@@ -130,6 +133,7 @@ while [[ $# -gt 0 ]]; do
     --steerer-lr) STEERER_LR="$2"; shift 2 ;;
     --early-stop-metric) EARLY_STOP_METRIC="$2"; shift 2 ;;
     --early-stop-patience) EARLY_STOP_PATIENCE="$2"; shift 2 ;;
+    --disable-prior-after-on-plateau) DISABLE_PRIOR_AFTER_ON_PLATEAU="$2"; shift 2 ;;
     --port) PORT="$2"; shift 2 ;;
     --gpus) GPUS="$2"; shift 2 ;;
     --zeroq-path) ZEROQ_PATH="$2"; shift 2 ;;
@@ -164,6 +168,7 @@ case "$TARGET" in
     STEERER_LR="${STEERER_LR:-1e-5}"
     EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-steered}"
     EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
+    DISABLE_PRIOR_AFTER_ON_PLATEAU="${DISABLE_PRIOR_AFTER_ON_PLATEAU:-0}"
     PORT="${PORT:-29583}"
     GPUS="${GPUS:-0}"
     OUT_DIR="${OUT_DIR:-artifacts/train_700m_cmi_steerer_dense_c4_mix_seq512_20260526}"
@@ -180,6 +185,7 @@ case "$TARGET" in
     STEERER_LR="${STEERER_LR:-0}"
     EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-blind}"
     EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
+    DISABLE_PRIOR_AFTER_ON_PLATEAU="${DISABLE_PRIOR_AFTER_ON_PLATEAU:-0}"
     PORT="${PORT:-29584}"
     GPUS="${GPUS:-0}"
     OUT_DIR="${OUT_DIR:-artifacts/train_700m_full_dense_c4_mix_baseline_20260526}"
@@ -196,6 +202,7 @@ case "$TARGET" in
     STEERER_LR="${STEERER_LR:-1e-4}"
     EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-either}"
     EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
+    DISABLE_PRIOR_AFTER_ON_PLATEAU="${DISABLE_PRIOR_AFTER_ON_PLATEAU:-0}"
     PORT="${PORT:-29585}"
     GPUS="${GPUS:-0}"
     OUT_DIR="${OUT_DIR:-artifacts/train_700m_full_cmi_steerer_dense_c4_mix_thesis_20260526}"
@@ -212,6 +219,7 @@ case "$TARGET" in
     STEERER_LR="${STEERER_LR:-0}"
     EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-blind}"
     EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
+    DISABLE_PRIOR_AFTER_ON_PLATEAU="${DISABLE_PRIOR_AFTER_ON_PLATEAU:-0}"
     PORT="${PORT:-29588}"
     GPUS="${GPUS:-0}"
     OUT_DIR="${OUT_DIR:-artifacts/train_700m_top2_zeroq_4bit_c4_mix_baseline_20260526_3080}"
@@ -228,6 +236,7 @@ case "$TARGET" in
     STEERER_LR="${STEERER_LR:-1e-4}"
     EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-either}"
     EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
+    DISABLE_PRIOR_AFTER_ON_PLATEAU="${DISABLE_PRIOR_AFTER_ON_PLATEAU:-5}"
     PORT="${PORT:-29589}"
     GPUS="${GPUS:-0}"
     OUT_DIR="${OUT_DIR:-artifacts/train_700m_top2_cmi_steerer_zeroq_4bit_c4_mix_thesis_20260526_3080}"
@@ -244,6 +253,7 @@ case "$TARGET" in
     STEERER_LR="${STEERER_LR:-1e-5}"
     EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-steered}"
     EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
+    DISABLE_PRIOR_AFTER_ON_PLATEAU="${DISABLE_PRIOR_AFTER_ON_PLATEAU:-0}"
     PORT="${PORT:-29569}"
     GPUS="${GPUS:-1}"
     OUT_DIR="${OUT_DIR:-artifacts/train_4b_cmi_steerer_zeroq_4bit_c4_mix_20260526_offline_gpu1}"
@@ -260,6 +270,7 @@ case "$TARGET" in
     STEERER_LR="${STEERER_LR:-0}"
     EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-blind}"
     EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
+    DISABLE_PRIOR_AFTER_ON_PLATEAU="${DISABLE_PRIOR_AFTER_ON_PLATEAU:-0}"
     PORT="${PORT:-29586}"
     GPUS="${GPUS:-1}"
     OUT_DIR="${OUT_DIR:-artifacts/train_700m_top2_zeroq_4bit_c4_mix_baseline_20260526_gpu1}"
@@ -276,6 +287,7 @@ case "$TARGET" in
     STEERER_LR="${STEERER_LR:-1e-4}"
     EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-either}"
     EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-40}"
+    DISABLE_PRIOR_AFTER_ON_PLATEAU="${DISABLE_PRIOR_AFTER_ON_PLATEAU:-5}"
     PORT="${PORT:-29587}"
     GPUS="${GPUS:-1}"
     OUT_DIR="${OUT_DIR:-artifacts/train_700m_top2_cmi_steerer_zeroq_4bit_c4_mix_thesis_20260526_gpu1}"
@@ -414,6 +426,7 @@ run_local() {
     --epochs "$EPOCHS" --steps "$STEPS" --batch "$BATCH" --seq-len "$SEQ_LEN" --eval-tokens "$EVAL_TOKENS"
     --lr "$LR" --steerer-lr "$STEERER_LR"
     --early-stop-metric "$EARLY_STOP_METRIC" --early-stop-patience "$EARLY_STOP_PATIENCE"
+    --disable-prior-after-on-plateau "$DISABLE_PRIOR_AFTER_ON_PLATEAU"
   )
   if [[ "$BACKEND" == "zeroq" ]]; then
     cmd+=(--zeroq-path "$ZEROQ_PATH" --compute-in-4bit)
@@ -540,6 +553,7 @@ cmd=(
   --epochs "$EPOCHS" --steps "$STEPS" --batch "$BATCH" --seq-len "$SEQ_LEN" --eval-tokens "$EVAL_TOKENS"
   --lr "$LR" --steerer-lr "$STEERER_LR"
   --early-stop-metric "$EARLY_STOP_METRIC" --early-stop-patience "$EARLY_STOP_PATIENCE"
+  --disable-prior-after-on-plateau "$DISABLE_PRIOR_AFTER_ON_PLATEAU"
   --zeroq-path /home/drawson/ZeroQ --compute-in-4bit
   "${resume_args[@]}"
 )
@@ -564,7 +578,7 @@ REMOTE
     TARGET="$TARGET" MODEL_CONFIG="$MODEL_CONFIG" BACKEND="$BACKEND" DATA_MODE="$DATA_MODE" C4_RATIO="$C4_RATIO" \
     TRAIN_SURFACE="$TRAIN_SURFACE" EPOCHS="$EPOCHS" TARGET_EPOCH="$TARGET_EPOCH" STEPS="$STEPS" BATCH="$BATCH" \
     SEQ_LEN="$SEQ_LEN" EVAL_TOKENS="$EVAL_TOKENS" LR="$LR" STEERER_LR="$STEERER_LR" \
-    EARLY_STOP_METRIC="$EARLY_STOP_METRIC" EARLY_STOP_PATIENCE="$EARLY_STOP_PATIENCE" CHECKPOINT="$CHECKPOINT" \
+    EARLY_STOP_METRIC="$EARLY_STOP_METRIC" EARLY_STOP_PATIENCE="$EARLY_STOP_PATIENCE" DISABLE_PRIOR_AFTER_ON_PLATEAU="$DISABLE_PRIOR_AFTER_ON_PLATEAU" CHECKPOINT="$CHECKPOINT" \
     OUT_DIR="$OUT_DIR" PORT="$PORT" GPUS="$GPUS" REMOTE_REPO="$REMOTE_REPO" REMOTE_TORCHRUN="$REMOTE_TORCHRUN" \
     REMOTE_PYTHON="$REMOTE_PYTHON" HF_CACHE="$HF_CACHE" FRESH="$FRESH" FORCE_KILL="$FORCE_KILL" \
     DRY_RUN="$DRY_RUN" FOREGROUND="$FOREGROUND" STATUS_ONLY="$STATUS_ONLY" ALLOW_EXISTING_OUT_DIR="$ALLOW_EXISTING_OUT_DIR" \
