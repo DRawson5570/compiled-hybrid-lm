@@ -4,7 +4,7 @@
 
 ## Abstract
 
-We present a modular adapter cartridge system that improves frozen language model performance on knowledge-intensive benchmarks by up to +22 percentage points using only 8MB of trainable parameters. A single frozen base model serves multiple domains through hot-swappable cartridges, each trained with 500 steps of option-ranking cross-entropy loss. A learned embedding router selects the appropriate cartridge per prompt with 98% abstention accuracy on out-of-domain inputs. We quantify the architecture's boundary: knowledge tasks benefit strongly (+9 to +22pp), commonsense reasoning does not (-7pp).
+We present a modular adapter cartridge system that improves frozen language model performance on knowledge-intensive benchmarks by up to +22 percentage points using only 8MB of trainable parameters. A single frozen base model serves multiple domains through hot-swappable cartridges, each trained with option-ranking cross-entropy loss. A learned embedding router selects the appropriate cartridge per prompt with 98% abstention accuracy on out-of-domain inputs. We quantify the architecture's current boundary: science and knowledge tasks benefit strongly (+9 to +22pp), QA-style commonsense can improve in follow-up experiments (+16pp on a mixed CommonsenseQA/OpenBookQA/HellaSwag slice), while HellaSwag-style narrative continuation remains unresolved.
 
 ## 1. Architecture
 
@@ -39,8 +39,11 @@ All results on Qwen2.5-1.5B, zero-shot, log-likelihood multiple-choice scoring.
 | ARC-Easy | 66.49% | **88.60%** | **+22.1 pp** | Science knowledge |
 | MMLU (broad) | 38.80% | **48.00%** | **+9.2 pp** | Mixed knowledge/commonsense |
 | HellaSwag | 64.66% | ~58% | **-6.7 pp** | Commonsense NLI |
+| Commonsense mix (follow-up) | 39.17% | **55.50%** | **+16.3 pp** | QA-style commonsense |
 
 ARC-Challenge cartridge trained on 1,119 examples (500 steps). Transfers to ARC-Easy with zero additional training (+22.1pp). MMLU broad cartridge trained on 1,000 examples across 40 subjects (+9.2pp). HellaSwag cartridge trained on 2,000 examples — cartridge degrades performance.
+
+The commonsense follow-up is an exploratory run with a 96-dim bottleneck and 800 steps, evaluated on a mixed 600-example slice: HellaSwag, CommonsenseQA, and OpenBookQA, 200 examples each. The cartridge improves CommonsenseQA from 25.5% to 68.5% (+43.0pp) and OpenBookQA from 34.5% to 43.0% (+8.5pp), while the HellaSwag slice moves from 57.5% to 55.0% (-2.5pp). This changes the interpretation: cartridges can improve some commonsense-style multiple-choice tasks, but narrative continuation remains a harder subcase.
 
 ## 4. Learned Router
 
@@ -64,7 +67,7 @@ Mean mode works because untrained cartridges produce near-zero deltas for out-of
 
 ## 6. Known Limitations
 
-**Commonsense reasoning.** The adapter cartridge architecture does not improve commonsense NLI tasks (HellaSwag: -7pp). The cartridge injects corpus-statistical signals but cannot provide the grounded situational understanding that commonsense tasks require. This bounds the architecture to knowledge-intensive domains until a commonsense-compatible injection mechanism is developed.
+**Narrative commonsense remains unresolved.** The first HellaSwag-specific cartridge degraded performance (64.66% raw to roughly 58%), and a later mixed commonsense cartridge still did not beat raw Qwen on the HellaSwag slice (57.5% raw to 55.0%). However, the same mixed cartridge substantially improved QA-style commonsense tasks: CommonsenseQA improved from 25.5% to 68.5%, and OpenBookQA improved from 34.5% to 43.0%. The current limitation is therefore narrower than "commonsense does not work": cartridges help question-answer and everyday-science commonsense, but HellaSwag-style narrative continuation / commonsense NLI remains unsolved.
 
 **Model scale.** All results use Qwen2.5-1.5B. Scaling laws for cartridge effectiveness are unknown. Larger models may show smaller relative gains if their intrinsic knowledge covers more of the benchmark, or larger gains if the cartridge can inject more specialized knowledge than the base model possesses.
 
@@ -79,6 +82,7 @@ All benchmarks, training scripts, and evaluation harnesses are available in this
 - `hybrid/benchmarks/mmlu.py` — MMLU evaluation + training
 - `hybrid/benchmarks/arc_train.py` — ARC cartridge training
 - `hybrid/benchmarks/arc_rack_router.py` — Router training
+- `experiments/commonsense_cartridge_experiment.py` — exploratory commonsense-mix follow-up
 - `hybrid/cartridge_harness/qwen.py` — Cartridge runtime + router
 - `hybrid/superposition_steerer_v3.py` — Adapter steerer architecture
 
@@ -88,4 +92,4 @@ Hardware: All training and evaluation on Tesla M40 (12GB, 2015, no tensor cores)
 
 ## 8. Conclusion
 
-A modular adapter cartridge system can inject knowledge-specific capabilities into frozen language models with 500 training steps and 8MB of additional parameters. The architecture scales horizontally: add a cartridge, expand the router, mount both, and the system preserves existing capabilities while gaining new ones. The current boundary is commonsense reasoning — a direction for future work.
+A modular adapter cartridge system can inject knowledge-specific capabilities into frozen language models with small task-specific adapters. The architecture scales horizontally: add a cartridge, expand the router, mount both, and the system preserves existing capabilities while gaining new ones. The current boundary is not commonsense as a whole, but narrative-continuation commonsense: QA-style commonsense shows positive cartridge transfer, while HellaSwag-style continuation remains the key open problem.
