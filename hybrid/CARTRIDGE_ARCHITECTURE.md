@@ -34,7 +34,7 @@ Only the cartridge parameters receive gradients. The base model remains frozen. 
 All results on Qwen2.5-1.5B, zero-shot, log-likelihood multiple-choice scoring.
 
 | Benchmark | Raw Qwen | Cartridge | Δ | Type |
-|---|---:|---:|---:|
+|---|---:|---:|---:|---|
 | ARC-Challenge | 59.87% | **77.26%** | **+17.4 pp** | Science knowledge |
 | ARC-Easy | 66.49% | **88.60%** | **+22.1 pp** | Science knowledge |
 | MMLU (broad) | 38.80% | **48.00%** | **+9.2 pp** | Mixed knowledge/commonsense |
