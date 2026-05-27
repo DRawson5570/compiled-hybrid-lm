@@ -30,7 +30,10 @@ V = 50257
 PUNCT_IDS = {0,2,3,4,5,7,8,9,10,11,12,13,14,25,26,27,28,29,30,31,58,60,61,90,91,92,93,198,220}
 MODEL_CONFIGS = {
     '124m': dict(d_model=768, n_layers=12, n_heads=12, d_ff=3072, max_len=128),
-    '700m': dict(d_model=1536, n_layers=22, n_heads=16, d_ff=6144, max_len=512),
+    '500m': dict(d_model=1408, n_layers=18, n_heads=16, d_ff=5632, max_len=128),
+    '1b':    dict(d_model=2048, n_layers=24, n_heads=16, d_ff=8192, max_len=128),
+    '4b':    dict(d_model=3072, n_layers=40, n_heads=24, d_ff=12288, max_len=128),
+    '700m':  dict(d_model=1536, n_layers=22, n_heads=16, d_ff=6144, max_len=512),
 }
 
 class StreamingSteererDatasetV4(Dataset):
