@@ -195,11 +195,11 @@ class CartridgeChatRuntime:
 
         general = SuperpositionSteererV3(d_model=d_model, init_scale=0.01, noise_scale=0.0).to(self.device).eval()
         general_ckpt = torch.load(REPO / general_steerer, map_location=self.device, weights_only=False)
-        general.load_state_dict(general_ckpt['steerer_state'])
+        general.load_state_dict(general_ckpt['steerer_state'], strict=False)
 
         chat_ckpt = torch.load(REPO / chat_cartridge, map_location=self.device, weights_only=False)
         chat = build_chat_steerer_from_checkpoint(chat_ckpt, d_model, self.device)
-        chat.load_state_dict(chat_ckpt['steerer_state'])
+        chat.load_state_dict(chat_ckpt['steerer_state'], strict=False)
 
         self.rack.mount(
             CartridgeManifest('general-superposition', CartridgeRole.SUPERPOSITION_STEERER,
