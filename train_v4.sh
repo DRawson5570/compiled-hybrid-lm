@@ -149,7 +149,7 @@ ZEROQ_ARGS=""
 ENV="env CUDA_VISIBLE_DEVICES=$GPUS"
 [[ -n "$HF_CACHE" ]] && ENV="$ENV HF_DATASETS_CACHE=$HF_CACHE"
 
-CMD=($ENV $TORCHRUN --nproc_per_node=1 --master_port=$PORT
+CMD=($ENV $TORCHRUN --nproc_per_node=1 --nnodes=1 --node_rank=0 --master_addr=localhost --master_port=$PORT
   hybrid/train_steerer_v4.py
   $MODEL_ARG --epochs $EPOCHS --steps $STEPS --batch $BATCH --seq-len $SEQ_LEN
   --lr $LR --out-dir $OUT_DIR --device cuda --backend $BACKEND

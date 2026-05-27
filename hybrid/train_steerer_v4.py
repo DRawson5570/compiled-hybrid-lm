@@ -142,14 +142,17 @@ def load_neural_lm(ckpt_path, device):
     n_heads = s['encoder.layers.0.self_attn.in_proj_weight'].shape[0] // (3 * d_model)
     max_len = s['pos_emb.weight'].shape[0]
     model = DeepCausalLM(vocab=vocab, d_model=d_model, n_layers=n_layers, n_heads=n_heads, d_ff=d_ff, max_len=max_len, dropout=0.0)
-    model.load_state_dict(s); model = model.to(device)
+    model.load_state_dict(s)
+    if device != 'cpu':
+        model = model.to(device)
     return model, d_model
 
 def build_fresh_lm(model_config, seq_len, device):
     cfg = dict(MODEL_CONFIGS[model_config])
     cfg['max_len'] = max(int(cfg['max_len']), int(seq_len))
     model = DeepCausalLM(vocab=V, dropout=0.0, **cfg)
-    model = model.to(device)
+    if device != 'cpu':
+        model = model.to(device)
     return model, cfg['d_model']
 
 def v4_zeroq_surface(model):
@@ -267,10 +270,12 @@ def main():
 
     if args.from_scratch:
         print(f'[build] Fresh {args.model_config} DeepCausalLM...')
-        model, d_model = build_fresh_lm(args.model_config, args.seq_len, device)
+        model, d_model = build_fresh_lm(args.model_config, args.seq_len,
+                                         'cpu' if args.backend == 'zeroq' else device)
     else:
         print('[load] Warm-start model from V2...')
-        model, d_model = load_neural_lm(REPO / args.resume_model, device)
+        model, d_model = load_neural_lm(REPO / args.resume_model,
+                                         'cpu' if args.backend == 'zeroq' else device)
     if args.backend == 'zeroq':
         print('[zeroq] Partitioning frozen backbone; resident=trainable embeddings/head/ln_f...')
         backend = ZeroQPartitionedBackend(
