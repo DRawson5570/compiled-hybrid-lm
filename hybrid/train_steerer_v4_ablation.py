@@ -32,7 +32,6 @@ MODEL_CONFIGS = {
     '124m': dict(d_model=768, n_layers=12, n_heads=12, d_ff=3072, max_len=128),
     '500m': dict(d_model=1408, n_layers=18, n_heads=16, d_ff=5632, max_len=128),
     '1b':    dict(d_model=2048, n_layers=24, n_heads=16, d_ff=8192, max_len=128),
-    '2b':    dict(d_model=2560, n_layers=24, n_heads=16, d_ff=10240, max_len=128),
     '4b':    dict(d_model=3072, n_layers=40, n_heads=24, d_ff=12288, max_len=128),
     '700m':  dict(d_model=1536, n_layers=22, n_heads=16, d_ff=6144, max_len=512),
 }
@@ -62,6 +61,8 @@ class StreamingTokenDataset(Dataset):
         self.train_ids = train_ids
         self.seq_len = seq_len
         self.N = len(train_ids)
+    def __len__(self):
+        return self.N // self.seq_len
 
     def __len__(self):
         return 1000000
@@ -218,8 +219,8 @@ def main():
     p.add_argument('--backend', choices=['dense', 'zeroq'], default='dense')
     p.add_argument('--zeroq-path', type=str, default='/home/drawson/ZeroQ')
     p.add_argument('--compute-in-4bit', action='store_true')
-    p.add_argument('--injection', choices=['residual', 'logit', 'none'], default='residual',
-                   help='Compiled-prior injection method: residual hooks, output-logit head, or disabled.')
+    p.add_argument('--injection', choices=['residual', 'logit', 'none'], default='none',
+                    help='Compiled-prior injection method: residual hooks, output-logit head, or disabled.')
     p.add_argument('--prior-head-lr', type=float, default=None,
                    help='LR for --injection logit head; defaults to --lr.')
     p.add_argument('--log-every', type=int, default=50,
@@ -318,7 +319,7 @@ def main():
     else:
         gpu_fc = None
 
-    opt_groups = [{'params': model_params, 'lr': 3e-5}]
+    opt_groups = [{'params': model_params, 'lr': args.lr}]
     if steerer is not None:
         opt_groups.append({'params': steerer.parameters(), 'lr': args.lr})
     if prior_head is not None:
@@ -349,7 +350,7 @@ def main():
     train_dataset = (StreamingSteererDatasetV4(train_ids=train_ids, seq_len=args.seq_len, V=V)
                      if use_compiled else StreamingTokenDataset(train_ids=train_ids, seq_len=args.seq_len))
     train_loader = DataLoader(train_dataset, batch_size=args.batch,
-                              num_workers=4, pin_memory=True, drop_last=True)
+                              num_workers=0, pin_memory=True, drop_last=True)
     loader_iter = iter(train_loader)
 
     for ep in range(start_epoch, args.epochs + 1):
