@@ -128,9 +128,9 @@ class SuperpositionSteererV3(nn.Module):
         o_rms = offset_float.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp(min=1e-8)
         normalized_offset = offset_float * (h_rms / o_rms)
 
-        alpha = self.alpha.abs()
-        beta = self.betas[group].abs()
-        gamma = self.gammas[str(layer_idx)].abs()
+        alpha = self.alpha
+        beta = self.betas[group]
+        gamma = self.gammas[str(layer_idx)]
         scale = alpha.float() * beta.float() * gamma.float()
         return h + (scale * normalized_offset).to(dtype=h.dtype)
 

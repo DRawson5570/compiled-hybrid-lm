@@ -26,7 +26,11 @@ import torch.optim as optim
 DEEPSEEK = Path('/home/drawson/deepseek_experiments')
 LLM_DECOUPLING = Path('/home/drawson/llm_decoupling')
 sys.path.insert(0, str(LLM_DECOUPLING))
-from compile_wiki_lm_v13 import load_setup, load_or_build_tokens
+try:
+    from compile_wiki_lm_v13 import load_setup, load_or_build_tokens
+except ImportError:
+    load_setup = None
+    load_or_build_tokens = None
 
 # Import blender model directly from file
 def _import_file(name, path):
@@ -35,10 +39,17 @@ def _import_file(name, path):
     spec.loader.exec_module(mod)
     return mod
 
-_blender_mod = _import_file('blender_v3', str(DEEPSEEK / 'hybrid/v3_super_blender/model.py'))
-_blender_util = _import_file('blender_util', str(DEEPSEEK / 'hybrid/v1_blender/blender_model.py'))
-WindowMLPBlender = _blender_mod.WindowMLPBlender
-build_feature_matrix = _blender_util.build_feature_matrix
+# Import blender model — optional, not needed for steerer-only training
+try:
+    _blender_mod = _import_file('blender_v3', str(DEEPSEEK / 'hybrid/v3_super_blender/model.py'))
+    _blender_util = _import_file('blender_util', str(DEEPSEEK / 'hybrid/v1_blender/blender_model.py'))
+    WindowMLPBlender = _blender_mod.WindowMLPBlender
+    build_feature_matrix = _blender_util.build_feature_matrix
+except (FileNotFoundError, AttributeError):
+    _blender_mod = None
+    _blender_util = None
+    WindowMLPBlender = None
+    build_feature_matrix = None
 
 
 # ---------------------------------------------------------------------------

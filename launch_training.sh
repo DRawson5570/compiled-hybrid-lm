@@ -17,6 +17,7 @@ BATCH="${BATCH:-}"
 SEQ_LEN="${SEQ_LEN:-}"
 EVAL_TOKENS="${EVAL_TOKENS:-}"
 LR="${LR:-}"
+WARM_UP_LR="${WARM_UP_LR:-}"
 STEERER_LR="${STEERER_LR:-}"
 EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-}"
 EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-}"
@@ -27,8 +28,17 @@ CHECKPOINT="${CHECKPOINT:-}"
 INIT_STEERER_CHECKPOINT="${INIT_STEERER_CHECKPOINT:-}"
 FREEZE_STEERER=0
 CALIBRATE_STEERING_CONTROLS=0
+TRAIN_STEERING_CONTROLS_DURING_WARMUP=0
+STEERING_CONTROL_WARMUP_LR="${STEERING_CONTROL_WARMUP_LR:-}"
 STEERING_CONTROL_STEPS="${STEERING_CONTROL_STEPS:-}"
 STEERING_CONTROL_LR="${STEERING_CONTROL_LR:-}"
+STEERING_CONTROL_WARMUP_EPOCHS="${STEERING_CONTROL_WARMUP_EPOCHS:-}"
+STEERING_CONTROL_OPTIMIZER="${STEERING_CONTROL_OPTIMIZER:-}"
+STEERING_CONTROL_LBFGS_INNER_STEPS="${STEERING_CONTROL_LBFGS_INNER_STEPS:-}"
+STEERING_CONTROL_TARGET_PPL="${STEERING_CONTROL_TARGET_PPL:-}"
+STEERING_CONTROL_PATIENCE="${STEERING_CONTROL_PATIENCE:-}"
+STEERING_CONTROL_MIN_DELTA="${STEERING_CONTROL_MIN_DELTA:-}"
+STEERING_CONTROL_LOG_INTERVAL="${STEERING_CONTROL_LOG_INTERVAL:-}"
 OUT_DIR="${OUT_DIR:-}"
 OUT_DIR_EXPLICIT=0
 PORT=""
@@ -95,6 +105,24 @@ Common options:
                           Repeated-batch alpha/beta/gamma calibration steps. Defaults to --steps.
   --steering-control-lr X
                           Alpha/beta/gamma calibration learning rate. Default: trainer default.
+  --steering-control-warmup-epochs N
+                          Train the neural surface for N main epochs before solving alpha/beta/gamma.
+  --train-steering-controls-during-warmup
+                          Train alpha/beta/gamma alongside the neural surface during scheduled warmup.
+  --steering-control-warmup-lr LR
+                          AdamW LR for alpha/beta/gamma during joint warmup.
+  --steering-control-optimizer NAME
+                          adamw or lbfgs. Default: trainer default.
+  --steering-control-lbfgs-inner-steps N
+                          LBFGS max_iter per calibration step. Default: trainer default.
+  --steering-control-target-ppl X
+                          Require repeated-batch calibration PPL <= X before main training starts.
+  --steering-control-patience N
+                          Stop calibration after N steps without a new best loss. Default: trainer default.
+  --steering-control-min-delta X
+                          Minimum loss improvement counted as a new calibration best.
+  --steering-control-log-interval N
+                          Calibration logging interval in outer steps.
   --out-dir PATH          Output directory on the machine where training runs.
   --allow-existing-out-dir
                           Allow --fresh to write into an output dir that already has checkpoints.
@@ -103,6 +131,7 @@ Common options:
   --seq-len N             Sequence length. Target default: local-700m=512, pe2-4b=128
   --eval-tokens N         Eval tokens. Target default: local-700m=8192, pe2-4b=2048
   --lr X                  Model-surface learning rate. Default: 1e-4
+  --warm-up-lr X          Model-surface LR before scheduled steering-control calibration.
   --steerer-lr X          Steerer learning rate. Default: 1e-5
   --early-stop-metric M   none, steered, blind, or either. Default: steered
   --early-stop-patience N Epochs without improvement before stopping. Default: 40
@@ -154,8 +183,17 @@ while [[ $# -gt 0 ]]; do
     --init-steerer-checkpoint) INIT_STEERER_CHECKPOINT="$2"; shift 2 ;;
     --freeze-steerer) FREEZE_STEERER=1; shift ;;
     --calibrate-steering-controls) CALIBRATE_STEERING_CONTROLS=1; shift ;;
+    --train-steering-controls-during-warmup) TRAIN_STEERING_CONTROLS_DURING_WARMUP=1; shift ;;
+    --steering-control-warmup-lr) STEERING_CONTROL_WARMUP_LR="$2"; shift 2 ;;
     --steering-control-steps) STEERING_CONTROL_STEPS="$2"; shift 2 ;;
     --steering-control-lr) STEERING_CONTROL_LR="$2"; shift 2 ;;
+    --steering-control-warmup-epochs) STEERING_CONTROL_WARMUP_EPOCHS="$2"; shift 2 ;;
+    --steering-control-optimizer) STEERING_CONTROL_OPTIMIZER="$2"; shift 2 ;;
+    --steering-control-lbfgs-inner-steps) STEERING_CONTROL_LBFGS_INNER_STEPS="$2"; shift 2 ;;
+    --steering-control-target-ppl) STEERING_CONTROL_TARGET_PPL="$2"; shift 2 ;;
+    --steering-control-patience) STEERING_CONTROL_PATIENCE="$2"; shift 2 ;;
+    --steering-control-min-delta) STEERING_CONTROL_MIN_DELTA="$2"; shift 2 ;;
+    --steering-control-log-interval) STEERING_CONTROL_LOG_INTERVAL="$2"; shift 2 ;;
     --out-dir) OUT_DIR="$2"; OUT_DIR_EXPLICIT=1; shift 2 ;;
     --allow-existing-out-dir) ALLOW_EXISTING_OUT_DIR=1; shift ;;
     --steps) STEPS="$2"; shift 2 ;;
@@ -163,6 +201,7 @@ while [[ $# -gt 0 ]]; do
     --seq-len) SEQ_LEN="$2"; shift 2 ;;
     --eval-tokens) EVAL_TOKENS="$2"; shift 2 ;;
     --lr) LR="$2"; shift 2 ;;
+    --warm-up-lr) WARM_UP_LR="$2"; shift 2 ;;
     --steerer-lr) STEERER_LR="$2"; shift 2 ;;
     --early-stop-metric) EARLY_STOP_METRIC="$2"; shift 2 ;;
     --early-stop-patience) EARLY_STOP_PATIENCE="$2"; shift 2 ;;
@@ -356,6 +395,9 @@ fi
 find_matching_pids_py='import os, sys
 model_config = sys.argv[1]
 out_dir = sys.argv[2]
+backend = sys.argv[3]
+train_surface = sys.argv[4]
+force_kill = sys.argv[5] == "1"
 matches = []
 for name in os.listdir("/proc"):
     if not name.isdigit():
@@ -372,14 +414,17 @@ for name in os.listdir("/proc"):
     if "hybrid/train_4b_distributed.py" not in joined and "train_4b_distributed.py" not in joined:
         continue
     has_config = any(parts[i] == "--model-config" and i + 1 < len(parts) and parts[i + 1] == model_config for i in range(len(parts)))
+    has_backend = any(parts[i] == "--backend" and i + 1 < len(parts) and parts[i + 1] == backend for i in range(len(parts)))
+    has_surface = any(parts[i] == "--train-surface" and i + 1 < len(parts) and parts[i + 1] == train_surface for i in range(len(parts)))
     has_out = (not out_dir) or any(parts[i] == "--out-dir" and i + 1 < len(parts) and parts[i + 1] == out_dir for i in range(len(parts)))
-    if has_config and has_out:
+    same_target = has_config and has_backend and has_surface
+    if has_config and (has_out or (force_kill and same_target)):
         matches.append((pid, joined))
 for pid, joined in matches:
     print(f"{pid}\t{joined}")'
 
 find_matching_pids() {
-  "$PYTHON" -c "$find_matching_pids_py" "$MODEL_CONFIG" "$OUT_DIR"
+  "$PYTHON" -c "$find_matching_pids_py" "$MODEL_CONFIG" "$OUT_DIR" "$BACKEND" "$TRAIN_SURFACE" "$FORCE_KILL"
 }
 
 stop_matching_pids() {
@@ -489,6 +534,9 @@ run_local() {
   if [[ -n "$FREEZE_MODEL_UNTIL_STEERER_PPL" ]]; then
     cmd+=(--freeze-model-until-steerer-ppl "$FREEZE_MODEL_UNTIL_STEERER_PPL" --steerer-warmup-patience "$STEERER_WARMUP_PATIENCE")
   fi
+  if [[ -n "$WARM_UP_LR" ]]; then
+    cmd+=(--warm-up-lr "$WARM_UP_LR")
+  fi
   if [[ -n "$INIT_STEERER_CHECKPOINT" ]]; then
     cmd+=(--init-steerer-checkpoint "$INIT_STEERER_CHECKPOINT")
   fi
@@ -498,11 +546,38 @@ run_local() {
   if [[ "$CALIBRATE_STEERING_CONTROLS" == "1" ]]; then
     cmd+=(--calibrate-steering-controls)
   fi
+  if [[ "$TRAIN_STEERING_CONTROLS_DURING_WARMUP" == "1" ]]; then
+    cmd+=(--train-steering-controls-during-warmup)
+  fi
+  if [[ -n "$STEERING_CONTROL_WARMUP_LR" ]]; then
+    cmd+=(--steering-control-warmup-lr "$STEERING_CONTROL_WARMUP_LR")
+  fi
   if [[ -n "$STEERING_CONTROL_STEPS" ]]; then
     cmd+=(--steering-control-steps "$STEERING_CONTROL_STEPS")
   fi
   if [[ -n "$STEERING_CONTROL_LR" ]]; then
     cmd+=(--steering-control-lr "$STEERING_CONTROL_LR")
+  fi
+  if [[ -n "$STEERING_CONTROL_WARMUP_EPOCHS" ]]; then
+    cmd+=(--steering-control-warmup-epochs "$STEERING_CONTROL_WARMUP_EPOCHS")
+  fi
+  if [[ -n "$STEERING_CONTROL_OPTIMIZER" ]]; then
+    cmd+=(--steering-control-optimizer "$STEERING_CONTROL_OPTIMIZER")
+  fi
+  if [[ -n "$STEERING_CONTROL_LBFGS_INNER_STEPS" ]]; then
+    cmd+=(--steering-control-lbfgs-inner-steps "$STEERING_CONTROL_LBFGS_INNER_STEPS")
+  fi
+  if [[ -n "$STEERING_CONTROL_TARGET_PPL" ]]; then
+    cmd+=(--steering-control-target-ppl "$STEERING_CONTROL_TARGET_PPL")
+  fi
+  if [[ -n "$STEERING_CONTROL_PATIENCE" ]]; then
+    cmd+=(--steering-control-patience "$STEERING_CONTROL_PATIENCE")
+  fi
+  if [[ -n "$STEERING_CONTROL_MIN_DELTA" ]]; then
+    cmd+=(--steering-control-min-delta "$STEERING_CONTROL_MIN_DELTA")
+  fi
+  if [[ -n "$STEERING_CONTROL_LOG_INTERVAL" ]]; then
+    cmd+=(--steering-control-log-interval "$STEERING_CONTROL_LOG_INTERVAL")
   fi
   if [[ -n "$MAX_WARMUP_EPOCHS" ]]; then
     cmd+=(--max-warmup-epochs "$MAX_WARMUP_EPOCHS")
@@ -640,6 +715,9 @@ cmd=(
 if [[ -n "$FREEZE_MODEL_UNTIL_STEERER_PPL" ]]; then
   cmd+=(--freeze-model-until-steerer-ppl "$FREEZE_MODEL_UNTIL_STEERER_PPL" --steerer-warmup-patience "$STEERER_WARMUP_PATIENCE")
 fi
+if [[ -n "$WARM_UP_LR" ]]; then
+  cmd+=(--warm-up-lr "$WARM_UP_LR")
+fi
 if [[ -n "$INIT_STEERER_CHECKPOINT" ]]; then
   cmd+=(--init-steerer-checkpoint "$INIT_STEERER_CHECKPOINT")
 fi
@@ -649,11 +727,38 @@ fi
 if [[ "$CALIBRATE_STEERING_CONTROLS" == "1" ]]; then
   cmd+=(--calibrate-steering-controls)
 fi
+if [[ "$TRAIN_STEERING_CONTROLS_DURING_WARMUP" == "1" ]]; then
+  cmd+=(--train-steering-controls-during-warmup)
+fi
+if [[ -n "$STEERING_CONTROL_WARMUP_LR" ]]; then
+  cmd+=(--steering-control-warmup-lr "$STEERING_CONTROL_WARMUP_LR")
+fi
 if [[ -n "$STEERING_CONTROL_STEPS" ]]; then
   cmd+=(--steering-control-steps "$STEERING_CONTROL_STEPS")
 fi
 if [[ -n "$STEERING_CONTROL_LR" ]]; then
   cmd+=(--steering-control-lr "$STEERING_CONTROL_LR")
+fi
+if [[ -n "$STEERING_CONTROL_WARMUP_EPOCHS" ]]; then
+  cmd+=(--steering-control-warmup-epochs "$STEERING_CONTROL_WARMUP_EPOCHS")
+fi
+if [[ -n "$STEERING_CONTROL_OPTIMIZER" ]]; then
+  cmd+=(--steering-control-optimizer "$STEERING_CONTROL_OPTIMIZER")
+fi
+if [[ -n "$STEERING_CONTROL_LBFGS_INNER_STEPS" ]]; then
+  cmd+=(--steering-control-lbfgs-inner-steps "$STEERING_CONTROL_LBFGS_INNER_STEPS")
+fi
+if [[ -n "$STEERING_CONTROL_TARGET_PPL" ]]; then
+  cmd+=(--steering-control-target-ppl "$STEERING_CONTROL_TARGET_PPL")
+fi
+if [[ -n "$STEERING_CONTROL_PATIENCE" ]]; then
+  cmd+=(--steering-control-patience "$STEERING_CONTROL_PATIENCE")
+fi
+if [[ -n "$STEERING_CONTROL_MIN_DELTA" ]]; then
+  cmd+=(--steering-control-min-delta "$STEERING_CONTROL_MIN_DELTA")
+fi
+if [[ -n "$STEERING_CONTROL_LOG_INTERVAL" ]]; then
+  cmd+=(--steering-control-log-interval "$STEERING_CONTROL_LOG_INTERVAL")
 fi
 if [[ -n "$MAX_WARMUP_EPOCHS" ]]; then
   cmd+=(--max-warmup-epochs "$MAX_WARMUP_EPOCHS")
@@ -661,10 +766,10 @@ fi
 if [[ "$STOP_AFTER_STEERER_WARMUP" == "1" ]]; then
   cmd+=(--stop-after-steerer-warmup)
 fi
-cmd+=(
-  --zeroq-path /home/drawson/ZeroQ --compute-in-4bit
-  "${resume_args[@]}"
-)
+if [[ "$BACKEND" == "zeroq" ]]; then
+  cmd+=(--zeroq-path /home/drawson/ZeroQ --compute-in-4bit)
+fi
+cmd+=("${resume_args[@]}")
 echo "checkpoint_epoch=$checkpoint_epoch"
 echo "run_epochs=$EPOCHS"
 echo "target_epoch=$(( checkpoint_epoch + EPOCHS ))"
@@ -685,11 +790,15 @@ REMOTE
   ssh "$REMOTE_HOST" \
     TARGET="$TARGET" MODEL_CONFIG="$MODEL_CONFIG" BACKEND="$BACKEND" DATA_MODE="$DATA_MODE" C4_RATIO="$C4_RATIO" \
     TRAIN_SURFACE="$TRAIN_SURFACE" EPOCHS="$EPOCHS" TARGET_EPOCH="$TARGET_EPOCH" STEPS="$STEPS" BATCH="$BATCH" \
-    SEQ_LEN="$SEQ_LEN" EVAL_TOKENS="$EVAL_TOKENS" LR="$LR" STEERER_LR="$STEERER_LR" \
+    SEQ_LEN="$SEQ_LEN" EVAL_TOKENS="$EVAL_TOKENS" LR="$LR" WARM_UP_LR="$WARM_UP_LR" STEERER_LR="$STEERER_LR" \
     EARLY_STOP_METRIC="$EARLY_STOP_METRIC" EARLY_STOP_PATIENCE="$EARLY_STOP_PATIENCE" DISABLE_STEERER_AFTER_PLATEAU="$DISABLE_STEERER_AFTER_PLATEAU" \
     FREEZE_MODEL_UNTIL_STEERER_PPL="$FREEZE_MODEL_UNTIL_STEERER_PPL" STEERER_WARMUP_PATIENCE="$STEERER_WARMUP_PATIENCE" CHECKPOINT="$CHECKPOINT" \
     INIT_STEERER_CHECKPOINT="$INIT_STEERER_CHECKPOINT" FREEZE_STEERER="$FREEZE_STEERER" CALIBRATE_STEERING_CONTROLS="$CALIBRATE_STEERING_CONTROLS" \
-    STEERING_CONTROL_STEPS="$STEERING_CONTROL_STEPS" STEERING_CONTROL_LR="$STEERING_CONTROL_LR" MAX_WARMUP_EPOCHS="$MAX_WARMUP_EPOCHS" STOP_AFTER_STEERER_WARMUP="$STOP_AFTER_STEERER_WARMUP" \
+    TRAIN_STEERING_CONTROLS_DURING_WARMUP="$TRAIN_STEERING_CONTROLS_DURING_WARMUP" STEERING_CONTROL_WARMUP_LR="$STEERING_CONTROL_WARMUP_LR" \
+    STEERING_CONTROL_STEPS="$STEERING_CONTROL_STEPS" STEERING_CONTROL_LR="$STEERING_CONTROL_LR" STEERING_CONTROL_WARMUP_EPOCHS="$STEERING_CONTROL_WARMUP_EPOCHS" \
+    STEERING_CONTROL_OPTIMIZER="$STEERING_CONTROL_OPTIMIZER" STEERING_CONTROL_LBFGS_INNER_STEPS="$STEERING_CONTROL_LBFGS_INNER_STEPS" STEERING_CONTROL_TARGET_PPL="$STEERING_CONTROL_TARGET_PPL" \
+    STEERING_CONTROL_PATIENCE="$STEERING_CONTROL_PATIENCE" STEERING_CONTROL_MIN_DELTA="$STEERING_CONTROL_MIN_DELTA" STEERING_CONTROL_LOG_INTERVAL="$STEERING_CONTROL_LOG_INTERVAL" \
+    MAX_WARMUP_EPOCHS="$MAX_WARMUP_EPOCHS" STOP_AFTER_STEERER_WARMUP="$STOP_AFTER_STEERER_WARMUP" \
     OUT_DIR="$OUT_DIR" PORT="$PORT" GPUS="$GPUS" REMOTE_REPO="$REMOTE_REPO" REMOTE_TORCHRUN="$REMOTE_TORCHRUN" \
     REMOTE_PYTHON="$REMOTE_PYTHON" HF_CACHE="$HF_CACHE" FRESH="$FRESH" FORCE_KILL="$FORCE_KILL" \
     DRY_RUN="$DRY_RUN" FOREGROUND="$FOREGROUND" STATUS_ONLY="$STATUS_ONLY" ALLOW_EXISTING_OUT_DIR="$ALLOW_EXISTING_OUT_DIR" \

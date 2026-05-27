@@ -286,7 +286,6 @@ def _convert_linear_modules_to_4bit_compute(
             quant_state=quant_state,
             quant_type=quant_meta.get('quant_type', 'nf4'),
             blocksize=quant_meta.get('blocksize', 64),
-            bnb_quantized=True,
         )
         new_linear = bnb.nn.Linear4bit(
             module.in_features,

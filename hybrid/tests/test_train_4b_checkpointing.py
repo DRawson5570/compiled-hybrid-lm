@@ -7,6 +7,8 @@ from hybrid.train_4b_distributed import (
     _extract_steerer_state,
     _format_saved_status,
     _freeze_except,
+    _control_state_dict,
+    _restore_control_state,
     _resume_epoch_counters,
     _save_metric_checkpoints,
     _steerer_on_under_ppl,
@@ -128,6 +130,23 @@ def test_steering_control_parameters_are_alpha_beta_gamma_only():
     assert all(param.requires_grad for param in control_params)
     assert not steerer.steer_local.requires_grad
     assert not steerer.local_mlp[0].weight.requires_grad
+
+
+def test_control_state_restore_keeps_best_values():
+    steerer = SuperpositionSteererV3(d_model=16, inject_layers=[0])
+    controls = _steerer_control_parameters(steerer)
+    with torch.no_grad():
+        for idx, param in enumerate(controls):
+            param.fill_(idx + 1)
+
+    best_state = _control_state_dict(controls)
+    with torch.no_grad():
+        for param in controls:
+            param.add_(100)
+
+    _restore_control_state(controls, best_state)
+
+    assert [float(param.item()) for param in controls] == [1.0, 2.0, 3.0, 4.0, 5.0]
 
 
 def test_trainable_surface_names_separate_product_and_thesis_tracks():
