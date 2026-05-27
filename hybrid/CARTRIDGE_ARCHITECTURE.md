@@ -42,6 +42,7 @@ All results on Qwen2.5-1.5B, zero-shot, log-likelihood multiple-choice scoring.
 | Commonsense mix (follow-up) | 39.17% | **55.50%** | **+16.3 pp** | QA-style commonsense |
 | **Commonsense strong** (3-dataset, 128b) | 50.28% | **73.06%** | **+22.8 pp** | Multi-dataset: HS+CSQA+WG |
 | **HellaSwag** (strong cartridge, full 10K) | 64.66% | **67.79%** | **+3.1 pp** | Full HellaSwag validation |
+| **HellaSwag product path** (rack + router) | 64.66% | **67.66%** | **+3.0 pp** | 7-cartridge rack, 8-label router |
 
 ARC-Challenge cartridge trained on 1,119 examples (500 steps). Transfers to ARC-Easy with zero additional training (+22.1pp). MMLU broad cartridge trained on 1,000 examples across 40 subjects (+9.2pp). The first 2,000-example HellaSwag recipe degraded performance, but the focused follow-up with lower learning rate (`5e-5`), 96-dim bottleneck, and 10,000 HellaSwag training rows improved a 500-example held-out HellaSwag slice from 54.6% to 63.0%.
 
@@ -49,7 +50,7 @@ The commonsense-mix follow-up is an exploratory run with a 96-dim bottleneck and
 
 ## 4. Learned Router
 
-A 7-class linear router (5 built-in suites + ARC + `none`) achieves 93.4% validation accuracy. An 8-class router adding HellaSwag achieves 98.8%.
+A 7-class linear router (5 built-in suites + ARC + `none`) achieves 93.4% validation accuracy. An 8-class router adding CCS (commonsense) achieves 100% accuracy with 90.2% HellaSwag routing fidelity.
 
 **Abstention:** 98.0% of generic out-of-domain prompts correctly route to `none` with no cartridge activation. Forced-`none` route preserves raw Qwen accuracy exactly (59.87% = 59.87%).
 
