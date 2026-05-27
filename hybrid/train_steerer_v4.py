@@ -18,9 +18,14 @@ from torch.utils.data import Dataset, DataLoader
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
+# DeepCausalLM for dense/gather-release (standard nn.TransformerEncoder)
 _spec = importlib.util.spec_from_file_location('scaled', str(REPO / 'hybrid/train_scaled_neural_lm.py'))
 _mod = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_mod); DeepCausalLM = _mod.DeepCausalLM
-import sys as _sys; _sys.path.insert(0, str(REPO))  # restore after exec_module
+import sys as _sys; _sys.path.insert(0, str(REPO))
+
+# DeepSeekForCausalLM for 4-bit compute (explicit Q/K/V/O layers)
+from hf_deepseek import DeepSeekConfig, DeepSeekForCausalLM
+
 from hybrid.superposition_steerer_v3 import SuperpositionSteererV3
 _sys.path.insert(0, str(REPO))
 from hybrid.gpu_channels import GPUFeatureComputer
@@ -155,6 +160,18 @@ def build_fresh_lm(model_config, seq_len, device):
         model = model.to(device)
     return model, cfg['d_model']
 
+def build_deepseek_lm(model_config, seq_len, device):
+    """Build DeepSeekForCausalLM for 4-bit compute mode."""
+    cfg = dict(MODEL_CONFIGS[model_config])
+    cfg['vocab_size'] = V
+    cfg['max_len'] = max(int(cfg['max_len']), int(seq_len))
+    config = DeepSeekConfig(**cfg)
+    model = DeepSeekForCausalLM(config)
+    if device != 'cpu':
+        model = model.to(device)
+    d_model = cfg['d_model']
+    return model, d_model
+
 def v4_zeroq_surface(model):
     resident = {'head_bias', 'tok_emb.weight', 'pos_emb.weight', 'ln_f.weight', 'ln_f.bias'}
     names = []
@@ -174,6 +191,25 @@ def select_v4_optimizer_params(model):
         keep_trainable = name in trainable_names
         param.requires_grad = keep_trainable
         if keep_trainable:
+            params.append(param)
+    return params
+
+def _deepseek_zeroq_surface(model):
+    """Trainable surface for DeepSeekForCausalLM: embeddings + norms + attention."""
+    resident = {'head_bias', 'tok_emb.weight', 'pos_emb.weight', 'final_ln.weight', 'final_ln.bias'}
+    names = []
+    for name, _ in model.named_parameters():
+        if name in resident or 'attn' in name or 'norm' in name:
+            names.append(name)
+    return TrainableSurface.from_names(names)
+
+def _deepseek_optimizer_params(model):
+    resident = {'head_bias', 'tok_emb.weight', 'pos_emb.weight', 'final_ln.weight', 'final_ln.bias'}
+    params = []
+    for name, param in model.named_parameters():
+        keep = name in resident or 'attn' in name or 'norm' in name
+        param.requires_grad = keep
+        if keep:
             params.append(param)
     return params
 
@@ -269,9 +305,13 @@ def main():
         print(f'  Topics: {word_topics.shape}, POS tags: {len(pos_tags)} tokens mapped')
 
     if args.from_scratch:
-        print(f'[build] Fresh {args.model_config} DeepCausalLM...')
-        model, d_model = build_fresh_lm(args.model_config, args.seq_len,
-                                         'cpu' if args.backend == 'zeroq' else device)
+        print(f'[build] Fresh {args.model_config} {"DeepSeekForCausalLM" if args.compute_in_4bit else "DeepCausalLM"}...')
+        if args.compute_in_4bit:
+            model, d_model = build_deepseek_lm(args.model_config, args.seq_len,
+                                                'cpu' if args.backend == 'zeroq' else device)
+        else:
+            model, d_model = build_fresh_lm(args.model_config, args.seq_len,
+                                             'cpu' if args.backend == 'zeroq' else device)
     else:
         print('[load] Warm-start model from V2...')
         model, d_model = load_neural_lm(REPO / args.resume_model,
@@ -283,9 +323,10 @@ def main():
             zeroq_path=args.zeroq_path,
             compute_in_4bit=args.compute_in_4bit,
         )
-        handle = backend.prepare(model, v4_zeroq_surface(model))
+        surface = v4_zeroq_surface(model) if not args.compute_in_4bit else _deepseek_zeroq_surface(model)
+        handle = backend.prepare(model, surface)
         model = handle.model
-        model_params = select_v4_optimizer_params(model)
+        model_params = select_v4_optimizer_params(model) if not args.compute_in_4bit else _deepseek_optimizer_params(model)
         print(f'  zeroq stats={handle.memory_stats()} resident_model_params={sum(p.numel() for p in model_params):,}')
     else:
         for p in model.parameters(): p.requires_grad = True
@@ -383,12 +424,14 @@ def main():
             if steerer is not None:
                 steerer.set_weights(w_gpu)
 
-            logits = model(x)
-            if prior_head is not None:
-                logits = logits + prior_head(w_gpu, dtype=logits.dtype)
-            loss = F.cross_entropy(logits.reshape(-1, model.head_bias.shape[0]), y.reshape(-1))
-            if steerer is not None:
-                loss = loss + 0.001 * steerer.orthogonal_penalty()
+        logits = model(x)
+        if args.compute_in_4bit:
+            logits = logits.logits  # DeepSeekForCausalLM returns CausalLMOutput
+        if prior_head is not None:
+            logits = logits + prior_head(w_gpu, dtype=logits.dtype)
+        loss = F.cross_entropy(logits.reshape(-1, model.head_bias.shape[0]), y.reshape(-1))
+        if steerer is not None:
+            loss = loss + 0.001 * steerer.orthogonal_penalty()
 
             opt.zero_grad(); loss.backward()
             clip_params = list(model.parameters())
@@ -427,6 +470,8 @@ def main():
                     if steerer is not None:
                         steerer.set_weights(w_e)
                     l = model(inp)
+                    if args.compute_in_4bit:
+                        l = l.logits
                     if prior_head is not None:
                         l = l + prior_head(w_e, dtype=l.dtype)
                     es_nll += F.cross_entropy(l.reshape(-1, model.head_bias.shape[0]), tgt.reshape(-1), reduction='sum').item()
@@ -443,6 +488,8 @@ def main():
                 inp = val_ids[s:s+cl].unsqueeze(0).to(device)
                 tgt = val_ids[s+1:s+cl+1].unsqueeze(0).to(device)
                 l = model(inp)
+                if args.compute_in_4bit:
+                    l = l.logits
                 eb_nll += F.cross_entropy(l.reshape(-1, model.head_bias.shape[0]), tgt.reshape(-1), reduction='sum').item()
                 eb_n += cl
             eval_b = math.exp(eb_nll / max(eb_n, 1))
