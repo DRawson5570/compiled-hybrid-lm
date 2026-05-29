@@ -23,54 +23,70 @@ def _transformer_layers(model):
 
 
 class SuperpositionSteererV3(nn.Module):
-    """Upgraded 21-Channel MLP Steerer with Multi-Timescale Layer Routing.
+    """Multi-Timescale MLP Steerer with optional semantic channels.
 
-    Channel Indices:
+    Statistical channels (always present):
       [0:6]   Local Group (6):      uni, bi_fast, bi_slow, tri_fast, tri_slow, skip2
       [6:13]  Mid Group (7):        skip3, recency, entropy, shape, global_uni, ppmi_cos, ppmi_max
       [13:21] Global Group (8):     ppmi_norm, punct_density, repetition, unique_ratio, topic, KV, POS, spare
+
+    Optional semantic channels (when semantic_dim > 0):
+      [21:21+semantic_dim] Semantic Group: hidden-state projections per position
+      Routed to deep layers (3, 7, 11) for 12-layer, shifts for larger models.
     """
 
     def __init__(self, d_model: int = 768, inject_layers: list[int] | None = None,
-                 init_scale: float = 0.01, noise_scale: float = 0.05):
+                 init_scale: float = 0.01, noise_scale: float = 0.05,
+                 semantic_dim: int = 0):
         super().__init__()
+        self.semantic_dim = semantic_dim
         self.num_channels = 21
         self.d_model = d_model
         self.noise_scale = noise_scale
 
-        self.layer_routing = {
-            0: 'local', 1: 'local', 2: 'local',
-            4: 'mid', 5: 'mid', 6: 'mid',
-            8: 'global', 9: 'global', 10: 'global'
-        }
+        routing = {0: 'local', 1: 'local', 2: 'local',
+                   4: 'mid', 5: 'mid', 6: 'mid',
+                   8: 'global', 9: 'global', 10: 'global'}
+        if semantic_dim > 0:
+            routing.update({3: 'semantic', 7: 'semantic', 11: 'semantic'})
+
+        self.layer_routing = routing
         self.inject_layers = inject_layers or list(self.layer_routing.keys())
 
-        # Per-group steering vectors
         self.steer_local = nn.Parameter(torch.randn(6, d_model) * init_scale / (d_model ** 0.5))
         self.steer_mid = nn.Parameter(torch.randn(7, d_model) * init_scale / (d_model ** 0.5))
         self.steer_global = nn.Parameter(torch.randn(8, d_model) * init_scale / (d_model ** 0.5))
 
-        # Non-linear Gating MLPs (expanded for 21 channels)
-        self.local_mlp = nn.Sequential(
-            nn.Linear(6, 12), nn.GELU(), nn.Linear(12, 6))
-        self.mid_mlp = nn.Sequential(
-            nn.Linear(7, 14), nn.GELU(), nn.Linear(14, 7))
-        self.global_mlp = nn.Sequential(
-            nn.Linear(8, 16), nn.GELU(), nn.Linear(16, 8))
+        self.local_mlp = nn.Sequential(nn.Linear(6, 12), nn.GELU(), nn.Linear(12, 6))
+        self.mid_mlp = nn.Sequential(nn.Linear(7, 14), nn.GELU(), nn.Linear(14, 7))
+        self.global_mlp = nn.Sequential(nn.Linear(8, 16), nn.GELU(), nn.Linear(16, 8))
 
-        # Learned per-layer injection scalars
+        if semantic_dim > 0:
+            sd2 = semantic_dim * 2
+            self.steer_semantic = nn.Parameter(
+                torch.randn(semantic_dim, d_model) * init_scale / (d_model ** 0.5))
+            self.semantic_mlp = nn.Sequential(
+                nn.Linear(semantic_dim, sd2), nn.GELU(), nn.Linear(sd2, semantic_dim))
+            sd4 = semantic_dim * 4
+            self.semantic_encoder = nn.Sequential(
+                nn.LayerNorm(d_model),
+                nn.Linear(d_model, sd4),
+                nn.GELU(),
+                nn.Linear(sd4, semantic_dim),
+            )
+
         self.gammas = nn.ParameterDict({
             str(layer): nn.Parameter(torch.tensor(0.01)) for layer in self.inject_layers
         })
 
-        # Tiny model-specific steering controls. These are safe to overfit on a
-        # calibration batch, then freeze before neural training.
         self.alpha = nn.Parameter(torch.tensor(1.0))
         self.betas = nn.ParameterDict({
             'local': nn.Parameter(torch.tensor(1.0)),
             'mid': nn.Parameter(torch.tensor(1.0)),
             'global': nn.Parameter(torch.tensor(1.0)),
         })
+        if semantic_dim > 0:
+            self.betas['semantic'] = nn.Parameter(torch.tensor(1.0))
 
         self._current_weights: torch.Tensor | None = None
         self._hooks = []
@@ -84,11 +100,14 @@ class SuperpositionSteererV3(nn.Module):
         self._current_weights = weights
 
     def orthogonal_penalty(self) -> torch.Tensor:
-        all_vectors = torch.cat(
-            [self.steer_local, self.steer_mid, self.steer_global], dim=0)
+        parts = [self.steer_local, self.steer_mid, self.steer_global]
+        if self.semantic_dim > 0:
+            parts.append(self.steer_semantic)
+        all_vectors = torch.cat(parts, dim=0)
+        n_channels = all_vectors.shape[0]
         norm_vectors = F.normalize(all_vectors, p=2, dim=-1)
         correlation = torch.matmul(norm_vectors, norm_vectors.T)
-        identity = torch.eye(21, device=correlation.device)
+        identity = torch.eye(n_channels, device=correlation.device)
         return torch.mean((correlation - identity) ** 2)
 
     def _steer_layer(self, h: torch.Tensor, layer_idx: int) -> torch.Tensor:
@@ -117,10 +136,17 @@ class SuperpositionSteererV3(nn.Module):
             gated_w = self.mid_mlp(w[:, :, 6:13])
             w_soft = torch.softmax(gated_w / temp, dim=-1)
             offset = torch.einsum('btc, cd -> btd', w_soft, self.steer_mid)
-        else:  # global: channels 13:21
+        elif group == 'global':
             gated_w = self.global_mlp(w[:, :, 13:21])
             w_soft = torch.softmax(gated_w / temp, dim=-1)
             offset = torch.einsum('btc, cd -> btd', w_soft, self.steer_global)
+        elif group == 'semantic':
+            sem_features = self.semantic_encoder(h.float())
+            gated_w = self.semantic_mlp(sem_features)
+            w_soft = torch.softmax(gated_w / temp, dim=-1)
+            offset = torch.einsum('btc, cd -> btd', w_soft, self.steer_semantic)
+        else:
+            return h
 
         h_float = h.float()
         offset_float = offset.float()
@@ -163,16 +189,19 @@ class SuperpositionSteererV3(nn.Module):
 class FeatureConditionedAdapterSteerer(nn.Module):
     """Higher-capacity residual adapter for task cartridges.
 
-    Unlike the compact 21-vector superposition steerer, this adapter conditions
-    on both the current hidden state and the 21 compiled channel features. It
-    still exposes the same `_steer_layer` ABI, so it composes through
-    `SteererCartridgeRack` as an additive hot-swappable cartridge.
+    Conditions on both the current hidden state (via down projection) and the
+    combined 21 compiled channel features plus per-position semantic channels
+    (projected from the hidden state).  Exposes the same `_steer_layer` ABI for
+    composition through `SteererCartridgeRack`.
     """
 
     def __init__(self, d_model: int = 768, inject_layers: list[int] | None = None,
-                 bottleneck: int = 64, init_scale: float = 0.01, noise_scale: float = 0.02):
+                 bottleneck: int = 64, init_scale: float = 0.01, noise_scale: float = 0.02,
+                 semantic_dim: int = 16, extra_channels: int = 0):
         super().__init__()
-        self.num_channels = 21
+        self.semantic_dim = semantic_dim
+        self.extra_channels = extra_channels
+        self.num_channels = 21 + semantic_dim + extra_channels
         self.d_model = d_model
         self.bottleneck = bottleneck
         self.noise_scale = noise_scale
@@ -187,6 +216,14 @@ class FeatureConditionedAdapterSteerer(nn.Module):
         })
         self._current_weights: torch.Tensor | None = None
         self._hooks = []
+
+        rng = torch.Generator().manual_seed(20260527)
+        self._semantic_proj = nn.ParameterDict({
+            str(layer): nn.Parameter(
+                torch.randn(d_model, semantic_dim, generator=rng) / (d_model ** 0.5),
+                requires_grad=False,
+            ) for layer in self.inject_layers
+        })
 
         for layer in self.inject_layers:
             nn.init.normal_(self.down[str(layer)].weight, mean=0.0, std=init_scale / (d_model ** 0.5))
@@ -234,8 +271,15 @@ class FeatureConditionedAdapterSteerer(nn.Module):
             return h
         h_float = h.float()
         weights = self._aligned_weights(h_float)
+        sd = self.semantic_dim
+        ec = self.extra_channels
+        if sd > 0:
+            sem = torch.matmul(h_float, self._semantic_proj[key])
+            combined = torch.cat([weights[:, :, :21], sem, weights[:, :, 21 + sd:]], dim=-1)
+        else:
+            combined = weights[:, :, :self.num_channels]
         hidden_part = self.down[key](self.norms[key](h_float))
-        feature_part = self.feature[key](weights)
+        feature_part = self.feature[key](combined)
         delta = self.up[key](F.gelu(hidden_part + feature_part))
         return h + (self.gammas[key].abs().float() * delta).to(dtype=h.dtype)
 

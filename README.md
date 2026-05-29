@@ -155,20 +155,62 @@ README.md                      # This file
 
 ## Training
 
-### Staged thesis training (warm steerer, then train neural surface)
+### From-scratch 124M with compiled priors
 ```bash
 python hybrid/train_steerer_v4.py \
-    --neural-ckpt artifacts/c4_v2_768_x30/best.pt \
+    --from-scratch --model-config 124m \
+    --epochs 200 --steps 500 --batch 8 --seq-len 128 \
+    --lr 1e-3 --model-lr 3e-5 --injection residual
+```
+
+### Warm-start from a pretrained checkpoint
+```bash
+python hybrid/train_steerer_v4.py \
+    --resume-model artifacts/steerer_v2/steerer_best_b.pt \
     --epochs 200 --steps 500 --batch 8
 ```
 
-For thesis runs, the neural surface should not learn under a bad early steerer. The distributed trainer supports an online steerer warmup gate: train the steerer first, keep the neural surface frozen, then unfreeze the neural surface once `eval_steerer_on` reaches a configured PPL threshold. Warmup epochs are tracked separately; `--epochs` starts at 1 only after the neural surface unfreezes.
-
+### Resume from a training checkpoint (with optimizer state)
 ```bash
-./launch_training.sh --target local-700m-thesis-zeroq --fresh
+python hybrid/train_steerer_v4.py \
+    --resume-training-ckpt artifacts/steerer_v4/steerer_best_b.pt \
+    --from-scratch --model-config 124m \
+    --epochs 200 --steps 500 --batch 8 --seq-len 128 \
+    --lr 1e-3 --model-lr 1e-5 --injection residual
 ```
+Use `--model-lr` to lower the base model learning rate on resume (default `3e-5`).
 
-The thesis launcher targets enable `--freeze-model-until-steerer-ppl 50` by default. Baseline targets leave this unset. Use a lower threshold only after the warmup reliably reaches 50; thresholds like 10, 5, or 2 are too strict for the first 700M ZeroQ thesis pass and can prevent neural training from ever starting.
+### ZeroQ 4-bit quantized training (large models)
+```bash
+CUDA_VISIBLE_DEVICES=0 MASTER_ADDR=localhost MASTER_PORT=12355 \
+RANK=0 WORLD_SIZE=1 LOCAL_RANK=0 \
+python hybrid/train_steerer_v4.py \
+    --from-scratch --model-config 2b \
+    --epochs 200 --steps 500 --batch 4 --seq-len 128 \
+    --lr 1e-3 --model-lr 1e-5 --injection residual \
+    --backend zeroq --compute-in-4bit
+```
+Checkpoints automatically gather FP32 weights before saving and release after.
+
+### Semantic channel enrichment (experimental)
+```bash
+python hybrid/train_steerer_v4.py \
+    --from-scratch --model-config 124m \
+    --epochs 200 --steps 500 --batch 8 \
+    --lr 1e-3 --semantic-dim 16 --injection residual
+```
+Enables 16 additional semantic channels from hidden-state projections at layers 3/7/11.
+
+### Steering control calibration (UNTESTED)
+```bash
+python hybrid/train_steerer_v4.py \
+    --from-scratch --model-config 124m \
+    --epochs 200 --steps 500 --batch 8 \
+    --lr 1e-3 --calibrate 3 --injection residual
+```
+Freezes model + steerer weights, trains only alpha/beta/gamma scalars for 3 epochs with LBFGS, then unfreezes for joint training.
+
+### Cartridge-only (frozen model, train cartridge)
 
 ### Cartridge-only (frozen model, train cartridge)
 ```bash

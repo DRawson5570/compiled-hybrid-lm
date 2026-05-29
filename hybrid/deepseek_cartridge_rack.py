@@ -85,8 +85,14 @@ def build_steerer_from_checkpoint(ckpt: dict, d_model: int, device: torch.device
     steerer_class = ckpt.get('steerer_class') or ckpt.get('manifest', {}).get('steerer_class', 'SuperpositionSteererV3')
     if steerer_class == 'FeatureConditionedAdapterSteerer':
         bottleneck = int(ckpt.get('adapter_bottleneck', 64))
+        st = ckpt.get('steerer_state', {})
+        feat_shape = st.get('feature.0.weight')
+        semantic_dim = 16
+        if feat_shape is not None and feat_shape.shape[-1] == 21:
+            semantic_dim = 0
         return FeatureConditionedAdapterSteerer(
-            d_model=d_model, bottleneck=bottleneck, init_scale=0.01, noise_scale=0.0).to(device).eval()
+            d_model=d_model, bottleneck=bottleneck, init_scale=0.01, noise_scale=0.0,
+            semantic_dim=semantic_dim).to(device).eval()
     return SuperpositionSteererV3(d_model=d_model, init_scale=0.01, noise_scale=0.0).to(device).eval()
 
 

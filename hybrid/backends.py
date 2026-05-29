@@ -176,6 +176,7 @@ class ZeroQPartitionedBackend:
 
         if self.compute_in_4bit:
             _convert_linear_modules_to_4bit_compute(model, coordinator, wrapper, device, process_group)
+            _force_python_encoder_forward(model)
 
         # Re-assert the requested surface after partition setup, then materialize
         # only those parameters. Frozen params are owned by ZeroQ shards/hooks.
@@ -315,6 +316,38 @@ def _convert_linear_modules_to_4bit_compute(
     if converted == 0:
         raise RuntimeError('compute_in_4bit=True did not find any partitioned Linear modules to convert')
     return converted
+
+
+def _force_python_encoder_forward(model: nn.Module):
+    """Patch encoder layers to use pure-Python forward instead of C++ fused path.
+
+    The C++ fused ``torch._transformer_encoder_layer_fwd`` accesses Linear weights
+    directly and cannot handle bitsandbytes Linear4bit dequantization.  Replacing
+    each layer's forward with the manual ``_sa_block / _ff_block`` path ensures
+    the Python Linear4bit.forward method is called, which handles dtype casting.
+    """
+    layers = getattr(model, 'encoder', None)
+    if layers is None or not hasattr(layers, 'layers'):
+        return
+
+    for layer in layers.layers:
+        if hasattr(layer, '_sa_block') and hasattr(layer, '_ff_block'):
+            _sa = layer._sa_block
+            _ff = layer._ff_block
+            _n1 = layer.norm1
+            _n2 = layer.norm2
+            _dr1 = layer.dropout1
+            _dr2 = layer.dropout2
+
+            def make_py_forward(sa, ff, n1, n2, dr1, dr2):
+                def py_forward(self, src, src_mask=None, src_key_padding_mask=None, is_causal=False):
+                    x = src
+                    x = n1(x + dr1(sa(x, src_mask, src_key_padding_mask, is_causal)))
+                    x = n2(x + dr2(ff(x)))
+                    return x
+                return py_forward
+
+            layer.forward = make_py_forward(_sa, _ff, _n1, _n2, _dr1, _dr2).__get__(layer)
 
 
 def _find_zeroq_param(params: dict[Any, Any], param_ids: Iterable[Any], param_name: str) -> Any | None:

@@ -37,6 +37,129 @@ MODEL_CONFIGS = {
     '700m':  dict(d_model=1536, n_layers=22, n_heads=16, d_ff=6144, max_len=512),
 }
 
+class StreamingDatasetC4(torch.utils.data.IterableDataset):
+    """Mixes WikiText with C4 data at a configurable ratio."""
+
+    def __init__(self, wt_train_ids, seq_len, vocab_size, c4_ratio=0.85, seed=42):
+        super().__init__()
+        self.wt_train_ids = wt_train_ids
+        self.seq_len = seq_len
+        self.vocab_size = int(vocab_size)
+        self.c4_ratio = float(c4_ratio)
+        self.seed = int(seed)
+
+    def _local_c4_files(self):
+        import glob, json, os
+        roots = [
+            os.environ.get('HF_DATASETS_CACHE', ''),
+            os.path.join(os.environ.get('HF_HOME', ''), 'datasets'),
+            os.path.expanduser('~/deepseek_experiments/artifacts/hf_cache/datasets'),
+        ]
+        files, seen = [], set()
+        for root in roots:
+            if not root: continue
+            dl = os.path.join(os.path.expanduser(root), 'downloads')
+            for meta_path in glob.glob(os.path.join(dl, '*.json')):
+                data_path = meta_path[:-5]
+                if data_path in seen or not os.path.exists(data_path): continue
+                try:
+                    with open(meta_path) as fh: meta = json.load(fh)
+                except Exception: continue
+                if '/en/c4-train.' not in str(meta.get('url', '')): continue
+                seen.add(data_path); files.append(data_path)
+        return sorted(files)
+
+    def _iter_local_c4_texts(self, files, rng, worker_id, num_workers):
+        import gzip, json
+
+        shuffled = list(files)
+        rng.shuffle(shuffled)
+        worker_files = shuffled[worker_id::max(1, num_workers)] or shuffled
+
+        while True:
+            rng.shuffle(worker_files)
+            for path in worker_files:
+                try:
+                    with gzip.open(path, 'rt', encoding='utf-8') as fh:
+                        lines = []
+                        for line in fh:
+                            lines.append(line)
+                            if len(lines) >= 2000:
+                                rng.shuffle(lines)
+                                for l in lines:
+                                    try: text = (json.loads(l).get('text') or '').strip()
+                                    except: continue
+                                    if text: yield text
+                                lines = []
+                        if lines:
+                            rng.shuffle(lines)
+                            for l in lines:
+                                try: text = (json.loads(l).get('text') or '').strip()
+                                except: continue
+                                if text: yield text
+                except OSError:
+                    continue
+
+    def __iter__(self):
+        import random
+        from torch.utils.data import get_worker_info
+        from transformers import AutoTokenizer
+
+        worker = get_worker_info()
+        wid = worker.id if worker else 0
+        nw = worker.num_workers if worker else 1
+        rng = random.Random(self.seed + wid * 1009)
+        torch_gen = torch.Generator().manual_seed(self.seed + wid * 9176)
+        tokenizer = AutoTokenizer.from_pretrained('gpt2')
+
+        c4_files = self._local_c4_files()
+        channels = FastNgramFeatures(self.vocab_size)
+        if not c4_files:
+            c4_files = []
+
+        c4_iter = self._iter_local_c4_texts(c4_files, rng, wid, nw) if c4_files else None
+        c4_buf = []
+
+        def refill_c4():
+            nonlocal c4_buf, c4_iter
+            while len(c4_buf) < self.seq_len * 8:
+                if c4_iter is None:
+                    break
+                try:
+                    text = next(c4_iter)
+                except StopIteration:
+                    c4_iter = self._iter_local_c4_texts(c4_files, rng, wid, nw)
+                    continue
+                ids = tokenizer.encode(text[:2000], add_special_tokens=False)
+                if ids:
+                    c4_buf.extend(ids)
+
+        refill_c4()
+
+        while True:
+            use_c4 = rng.random() < self.c4_ratio and c4_files
+            if use_c4:
+                if len(c4_buf) < self.seq_len + 2:
+                    refill_c4()
+                start = rng.randint(0, max(0, len(c4_buf) - self.seq_len - 2))
+                ids = c4_buf[start:start + self.seq_len + 1]
+                if len(ids) < self.seq_len + 1:
+                    refill_c4()
+                    continue
+                x = torch.tensor(ids[:-1], dtype=torch.long)
+                y = torch.tensor(ids[1:], dtype=torch.long)
+                ch = FastNgramFeatures(self.vocab_size)
+                w_cpu = compute_cpu_features(ids[:-1], ch)
+            else:
+                max_start = max(1, len(self.wt_train_ids) - self.seq_len - 1)
+                start = torch.randint(0, max_start, (1,), generator=torch_gen).item()
+                x = self.wt_train_ids[start:start + self.seq_len]
+                y = self.wt_train_ids[start + 1:start + self.seq_len + 1]
+                ch = FastNgramFeatures(self.vocab_size)
+                w_cpu = compute_cpu_features(x.tolist(), ch)
+            yield x, y, w_cpu
+
+
 class StreamingSteererDatasetV4(Dataset):
     """Pre-computes CPU n-gram features in parallel background workers."""
     def __init__(self, train_ids, seq_len, V):
@@ -183,6 +306,81 @@ def maybe_init_dist_for_zeroq(device):
         torch.cuda.set_device(local_rank)
     return torch.device(f'cuda:{local_rank}') if device.type == 'cuda' else device
 
+
+def zeroq_save_checkpoint(state_dict: dict, path, handle):
+    """Gather ZeroQ weights to FP32, save, then release."""
+    if handle is not None and hasattr(handle, 'wrapper') and hasattr(handle.wrapper, 'start_gather'):
+        handle.wrapper.start_gather()
+        handle.wrapper.wait_gather()
+    torch.save(state_dict, path)
+    if handle is not None and hasattr(handle, 'wrapper') and hasattr(handle.wrapper, 'release'):
+        handle.wrapper.release()
+
+
+def calibrate_steering_controls(model, steerer, gpu_fc, train_loader, device, epochs):
+    """UNTESTED: freeze model + steerer weights, train only alpha/beta/gamma.
+
+    Runs N epochs on the training dataset with LBFGS, searching for injection
+    scaling that minimizes PPL with the frozen model.  The steerer weights
+    themselves are not updated — only per-layer gammas, group betas, and alpha.
+    """
+    if steerer is None:
+        return
+    control_params = list(steerer.steering_control_parameters())
+    if not control_params:
+        print('[calibrate] no steering control parameters found, skipping')
+        return
+    print(f'[calibrate] training {sum(p.numel() for p in control_params)} control params for {epochs} epochs')
+
+    model_prev = {p: p.requires_grad for p in model.parameters()}
+    steerer_prev = {p: p.requires_grad for p in steerer.parameters()}
+    for p in model.parameters():
+        p.requires_grad = False
+    for p in steerer.parameters():
+        p.requires_grad = p in control_params
+
+    model.eval()
+    steerer.eval()
+    opt = torch.optim.LBFGS(control_params, lr=0.1, max_iter=10, line_search_fn='strong_wolfe')
+    cpu_ch = FastNgramFeatures(V)
+
+    for ep in range(epochs):
+        loader_iter = iter(train_loader)
+        total_loss = 0.0
+        steps = 0
+        for _ in range(min(50, len(train_loader))):
+            batch = next(loader_iter)
+            x, y, w_cpu = batch
+            x = x.to(device)
+            y = y.to(device)
+            w_cpu = w_cpu.to(device)
+
+            def closure():
+                w_gpu = compute_compiled_features(x, w_cpu, gpu_fc)
+                if steerer.semantic_dim > 0:
+                    sem = compute_semantic_channels(model, steerer, x)
+                    w_gpu = torch.cat([w_gpu, sem], dim=-1)
+                steerer.set_weights(w_gpu)
+                logits = model(x)
+                loss = F.cross_entropy(logits.reshape(-1, V), y.reshape(-1))
+                loss = loss + 0.001 * steerer.orthogonal_penalty()
+                opt.zero_grad()
+                loss.backward()
+                return loss
+
+            loss = opt.step(closure)
+            total_loss += loss.item()
+            steps += 1
+
+        avg_loss = total_loss / max(steps, 1)
+        print(f'  calibrate epoch={ep + 1} loss={avg_loss:.4f} ppl={math.exp(avg_loss):.1f}', flush=True)
+
+    for p, req in model_prev.items():
+        p.requires_grad = req
+    for p, req in steerer_prev.items():
+        p.requires_grad = req
+    print(f'[calibrate] done  alpha={steerer.alpha.item():.4f}', flush=True)
+
 class CompiledPriorLogitHead(nn.Module):
     def __init__(self, feature_dim, vocab_size, init_scale=1e-4):
         super().__init__()
@@ -200,6 +398,42 @@ def compute_compiled_features(x, w_cpu, gpu_fc):
     w_gpu[:, :, 0:9] = w_cpu[:, :, :9]
     return w_gpu
 
+
+def compute_semantic_channels(model, steerer, x, capture_layers=(3, 7, 11)):
+    layers = model.encoder.layers
+    captured = {}
+
+    def make_cap_hook(idx):
+        def hook_fn(module, input, output):
+            h = output[0] if isinstance(output, tuple) else output
+            if torch.is_tensor(h):
+                captured[idx] = steerer._semantic_encoder(h.float())
+        return hook_fn
+
+    cap_hooks = []
+    for idx in capture_layers:
+        if idx < len(layers):
+            cap_hooks.append(layers[idx].register_forward_hook(make_cap_hook(idx)))
+
+    saved_req = {p: p.requires_grad for p in model.parameters()}
+    for p in model.parameters():
+        p.requires_grad = False
+    steerer.remove_hooks()
+    model(x)
+    steerer.register_hooks(model)
+    for p, req in saved_req.items():
+        p.requires_grad = req
+
+    for h in cap_hooks:
+        h.remove()
+
+    if not captured:
+        return torch.zeros(x.shape[0], x.shape[1], steerer.semantic_dim, device=x.device)
+
+    stacked = torch.stack([captured[idx] for idx in sorted(captured.keys())], dim=0)
+    return stacked.mean(dim=0)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--neural-ckpt', type=str, default='artifacts/c4_v2_768_x30/best.pt')
@@ -213,6 +447,15 @@ def main():
     p.add_argument('--batch', type=int, default=8)
     p.add_argument('--seq-len', type=int, default=128)
     p.add_argument('--lr', type=float, default=1e-3)
+    p.add_argument('--model-lr', type=float, default=3e-5,
+                   help='Learning rate for the base model (steerer gets --lr).')
+    p.add_argument('--semantic-dim', type=int, default=0,
+                   help='Number of semantic channels (0 = disabled, 16 = enabled).')
+    p.add_argument('--calibrate', type=int, default=0,
+                   help='UNTESTED: train steerer alphas/betas/gammas for N epochs with frozen model.')
+    p.add_argument('--data-mode', choices=['wikitext', 'c4-mix'], default='wikitext')
+    p.add_argument('--c4-ratio', type=float, default=0.85,
+                   help='Fraction of C4 examples in c4-mix mode.')
     p.add_argument('--out-dir', type=str, default='artifacts/steerer_v4')
     p.add_argument('--device', type=str, default='cuda')
     p.add_argument('--backend', choices=['dense', 'zeroq'], default='dense')
@@ -272,6 +515,39 @@ def main():
     else:
         print('[load] Warm-start model from V2...')
         model, d_model = load_neural_lm(REPO / args.resume_model, device)
+
+    if not args.from_scratch or args.backend != 'zeroq':
+        model_params = list(model.parameters())
+        if args.backend != 'zeroq':
+            for p in model.parameters(): p.requires_grad = True
+    else:
+        model_params = list(model.parameters())
+        for p in model.parameters(): p.requires_grad = True
+
+    opt_groups = [{'params': model_params, 'lr': args.model_lr}]
+    opt = torch.optim.AdamW(opt_groups, weight_decay=0.1)
+
+    best_eval_b = float('inf'); best_eval_s = float('inf')
+    start_epoch = 1
+
+    if args.resume_training_ckpt:
+        ckpt_path = REPO / args.resume_training_ckpt
+        print(f'[resume] Loading training checkpoint {ckpt_path}...')
+        ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+        model.load_state_dict(ckpt['state_dict'])
+        if ckpt.get('opt_state') is not None:
+            try:
+                opt.load_state_dict(ckpt['opt_state'])
+                for pg in opt.param_groups:
+                    pg['lr'] = pg.get('initial_lr', args.model_lr) if pg['lr'] > args.model_lr else pg['lr']
+            except (ValueError, RuntimeError) as e:
+                print(f'  [resume] opt mismatch, using fresh optimizer')
+        best_eval_b = float(ckpt.get('eval_b', best_eval_b))
+        best_eval_s = float(ckpt.get('eval_s', best_eval_s))
+        start_epoch = int(ckpt.get('epoch', 0)) + 1
+        print(f'  resumed at epoch={start_epoch} best_s={best_eval_s:.1f} best_b={best_eval_b:.1f}')
+
+    handle = None
     if args.backend == 'zeroq':
         print('[zeroq] Partitioning frozen backbone; resident=trainable embeddings/head/ln_f...')
         backend = ZeroQPartitionedBackend(
@@ -283,31 +559,29 @@ def main():
         model = handle.model
         model_params = select_v4_optimizer_params(model)
         print(f'  zeroq stats={handle.memory_stats()} resident_model_params={sum(p.numel() for p in model_params):,}')
-    else:
-        for p in model.parameters(): p.requires_grad = True
-        model_params = list(model.parameters())
     print(f'  {sum(p.numel() for p in model.parameters()):,} params  d_model={d_model}')
 
     steerer = None
     prior_head = None
     if use_residual:
         print('[build] 21-channel SuperpositionSteererV3...')
-        steerer = SuperpositionSteererV3(d_model=d_model, init_scale=0.01, noise_scale=0.05)
+        steerer = SuperpositionSteererV3(d_model=d_model, init_scale=0.01, noise_scale=0.05,
+                                          semantic_dim=args.semantic_dim)
         steerer = steerer.to(device)
         n_hooks = steerer.register_hooks(model)
         s_params = sum(p.numel() for p in steerer.parameters())
         print(f'  {n_hooks} hooks, {s_params:,} params  (LR={args.lr})')
-        print(f'    local: 6ch → layers [0,1,2]')
-        print(f'    mid:   7ch → layers [4,5,6]')
-        print(f'    global: 8ch → layers [8,9,10]')
-
     elif use_logit_prior:
-        print('[build] 21-channel output-logit compiled prior head...')
         prior_head = CompiledPriorLogitHead(feature_dim=21, vocab_size=V).to(device)
-        p_params = sum(p.numel() for p in prior_head.parameters())
-        print(f'  {p_params:,} params  scale_init={prior_head.scale.item():.4f}  LR={args.prior_head_lr or args.lr}')
     else:
         print('[build] compiled-prior injection disabled')
+
+    opt_groups = [{'params': model_params, 'lr': args.model_lr}]
+    if steerer is not None:
+        opt_groups.append({'params': steerer.parameters(), 'lr': args.lr})
+    if prior_head is not None:
+        opt_groups.append({'params': prior_head.parameters(), 'lr': args.prior_head_lr or args.lr})
+    opt = torch.optim.AdamW(opt_groups, weight_decay=0.1)
 
     if use_compiled:
         print('[build] GPU Feature Computer...')
@@ -318,38 +592,19 @@ def main():
     else:
         gpu_fc = None
 
-    opt_groups = [{'params': model_params, 'lr': 3e-5}]
-    if steerer is not None:
-        opt_groups.append({'params': steerer.parameters(), 'lr': args.lr})
-    if prior_head is not None:
-        opt_groups.append({'params': prior_head.parameters(), 'lr': args.prior_head_lr or args.lr})
-    opt = torch.optim.AdamW(opt_groups, weight_decay=0.1)
-
-    N = len(train_ids)
-    best_eval_b = float('inf'); best_eval_s = float('inf')
-    start_epoch = 1
-
-    if args.resume_training_ckpt:
-        ckpt_path = REPO / args.resume_training_ckpt
-        print(f'[resume] Loading training checkpoint {ckpt_path}...')
-        ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
-        model.load_state_dict(ckpt['state_dict'])
-        if steerer is not None and ckpt.get('steerer_state') is not None:
-            steerer.load_state_dict(ckpt['steerer_state'])
-        if prior_head is not None and ckpt.get('prior_head_state') is not None:
-            prior_head.load_state_dict(ckpt['prior_head_state'])
-        if ckpt.get('opt_state') is not None:
-            opt.load_state_dict(ckpt['opt_state'])
-        best_eval_b = float(ckpt.get('eval_b', best_eval_b))
-        best_eval_s = float(ckpt.get('eval_s', best_eval_s))
-        start_epoch = int(ckpt.get('epoch', 0)) + 1
-        print(f'  resumed at epoch={start_epoch} best_s={best_eval_s:.1f} best_b={best_eval_b:.1f}')
-
     # DataLoader for parallel CPU feature pre-computation
-    train_dataset = (StreamingSteererDatasetV4(train_ids=train_ids, seq_len=args.seq_len, V=V)
+    train_dataset = (StreamingDatasetC4(wt_train_ids=train_ids, seq_len=args.seq_len, vocab_size=V,
+                                          c4_ratio=args.c4_ratio)
+                     if use_compiled and args.data_mode == 'c4-mix' else
+                     StreamingSteererDatasetV4(train_ids=train_ids, seq_len=args.seq_len, V=V)
                      if use_compiled else StreamingTokenDataset(train_ids=train_ids, seq_len=args.seq_len))
     train_loader = DataLoader(train_dataset, batch_size=args.batch,
-                              num_workers=4, pin_memory=True, drop_last=True)
+                              num_workers=4 if args.data_mode != 'c4-mix' else 2,
+                              pin_memory=True, drop_last=True)
+
+    if args.calibrate > 0 and steerer is not None:
+        calibrate_steering_controls(model, steerer, gpu_fc, train_loader, device, args.calibrate)
+
     loader_iter = iter(train_loader)
 
     for ep in range(start_epoch, args.epochs + 1):
@@ -455,19 +710,19 @@ def main():
         winner = 's' if use_compiled and eval_s < eval_b else 'b'
         eval_gap = eval_s - eval_b if use_compiled else float('nan')
         if 'b' in new_best:
-            torch.save({'state_dict': model.state_dict(),
+            zeroq_save_checkpoint({'state_dict': model.state_dict(),
                         'steerer_state': steerer.state_dict() if steerer is not None else None,
                         'prior_head_state': prior_head.state_dict() if prior_head is not None else None,
                         'injection': args.injection,
                         'eval_s': eval_s, 'eval_b': eval_b, 'epoch': ep, 'opt_state': opt.state_dict()},
-                       out_dir / 'steerer_best_b.pt')
+                       out_dir / 'steerer_best_b.pt', handle)
         if 's' in new_best:
-            torch.save({'state_dict': model.state_dict(),
+            zeroq_save_checkpoint({'state_dict': model.state_dict(),
                         'steerer_state': steerer.state_dict() if steerer is not None else None,
                         'prior_head_state': prior_head.state_dict() if prior_head is not None else None,
                         'injection': args.injection,
                         'eval_s': eval_s, 'eval_b': eval_b, 'epoch': ep, 'opt_state': opt.state_dict()},
-                       out_dir / 'steerer_best_s.pt')
+                        out_dir / 'steerer_best_s.pt', handle)
 
         print(f'  epoch={ep:2d}  loss={avg_loss:.4f}  ppl={math.exp(avg_loss):.1f}  '
               f'eval_s={eval_s:.1f}  eval_b={eval_b:.1f}  '

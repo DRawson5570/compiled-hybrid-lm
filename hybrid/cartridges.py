@@ -151,14 +151,22 @@ class SteererCartridgeRack:
                 if self.composition_mode == 'chain':
                     result = hidden
                     for mounted in active:
-                        steered = mounted.steerer._steer_layer(result, layer_idx)
+                        steerer_device = next(mounted.steerer.parameters()).device
+                        if result.device != steerer_device:
+                            steered = mounted.steerer._steer_layer(result.to(steerer_device), layer_idx).to(result.device)
+                        else:
+                            steered = mounted.steerer._steer_layer(result, layer_idx)
                         result = result + mounted.weight * (steered - result)
                     result = result.to(dtype=hidden.dtype)
                 else:
                     total_delta = torch.zeros_like(hidden)
                     total_weight = 0.0
                     for mounted in active:
-                        steered = mounted.steerer._steer_layer(hidden, layer_idx)
+                        steerer_device = next(mounted.steerer.parameters()).device
+                        if hidden.device != steerer_device:
+                            steered = mounted.steerer._steer_layer(hidden.to(steerer_device), layer_idx).to(hidden.device)
+                        else:
+                            steered = mounted.steerer._steer_layer(hidden, layer_idx)
                         total_delta = total_delta + mounted.weight * (steered - hidden)
                         total_weight += abs(mounted.weight)
                     if self.composition_mode == 'mean' and total_weight > 0:
