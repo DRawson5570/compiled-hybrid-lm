@@ -93,6 +93,54 @@ Tests: 22 passing for ARC harness (`hybrid/tests/test_arc_benchmark.py`).
 
 Hardware: All training and evaluation on Tesla M40 (12GB, 2015, no tensor cores) and RTX 3080 (10GB). No cluster required.
 
-## 8. Conclusion
+## 8. Code Generation: On-Policy RFT (Rejection-Sampling Fine-Tuning)
+
+*Added by Qwen3.6 at 2026-05-29 after a 5-hour dead end corrected by Opus 4.8 (EXPERIMENT_LOG #388-#390).*
+
+### 8.1 Why option-ranking CE doesn't work for generation
+
+Multiple-choice tasks (ARC, MMLU, HellaSwag) succeed with option-ranking because the cartridge only needs to shift log-prob comparisons for 1-4 answer tokens. Open-ended code generation requires 30-80 sequentially correct tokens — autoregressive cross-entropy on canonical solutions trains the adapter to predict the right token given the right context, but during inference the model conditions on its own potentially flawed output. Small prediction errors compound across tokens. This is the off-policy/on-policy gap.
+
+**Fix: Rejection-sampling fine-tuning (RFT / STaR).** Generate N completions from the frozen base model. Test each. Train the cartridge with masked cross-entropy ONLY on the model's own passing rollouts — sequences it actually produced that pass the tests. This closes the train/inference distribution gap.
+
+### 8.2 Required pipeline
+
+```
+gen_candidates.py          →  sample N=8 completions per MBPP problem from frozen base,
+  (--n-samples 8)            execute real tests, cache only passing code as JSONL
+
+train_rft.py               →  load passing (prompt, code) pairs from cache,
+  (--steps 1500)             masked CE on code block only, gradients → adapter only
+
+eval_ab.py                 →  mount trained cartridge, measure greedy pass@1 on full
+  (--ckpt cartridge_best.pt) HumanEval with cartridge OFF (base) vs ON
+```
+
+Scripts: `~/code_harness/gen_candidates.py`, `train_rft.py`, `eval_ab.py`.
+
+### 8.3 Critical fixes (do NOT skip)
+
+| Fix | Why | How |
+|---|---|---|
+| `gradient_checkpointing_kwargs={"use_reentrant": False}` | Frozen base + GC silently kills hook gradients | Pass to `model.gradient_checkpointing_enable()` |
+| `model.train()` on frozen base | HF gates checkpointing on `self.training`; `eval()` = no-op | Call `model.train()` during training step, `model.eval()` during generation |
+| On-policy rollouts ONLY | Off-policy canonical CE = 0/40 HumanEval across 3 models | Train on passing model-generated completions, not reference solutions |
+| Chat-template prompting | Raw prompt ≠ instruction-tuned format; mismatch kills transfer | Use `tok.apply_chat_template(msgs, add_generation_prompt=True)` for both training and eval |
+| EOS as token ID, not string | `expected + tokenizer.eos_token` tokenizes as subwords, not the EOS token | Append `[tokenizer.eos_token_id]` to token ID list |
+| Adapter in fp32 | fp16 adapter weights cause NaN with small init_scale in hooks | `steerer.float()` |
+| Disable GC / enable KV cache during generation | GC is incompatible with `use_cache`; generation without cache is O(n²) | `gradient_checkpointing_disable()` + `use_cache = True` during gen, restore after |
+
+### 8.4 Qwen3.5-4B result (2026-05-29)
+
+| | Passes | Rate |
+|---|---|---|
+| Base (4-bit NF4, no cartridge) | 120/164 | 73.2% |
+| + RFT cartridge (step 1000) | 128/164 | 78.0% |
+| **Delta** | **+8 net** | **+4.9pp** |
+
+16 fixed, 8 broke. Artifacts: `artifacts/qwen35_4b_rft/cartridge_best.pt`, `ab_eval.json`.
+Training: 219 passing MBPP rollouts, 1500 steps, 4.2GB peak on 3080 10GB.
+
+## 9. Conclusion
 
 A modular adapter cartridge system can inject knowledge-specific capabilities into frozen language models with small task-specific adapters. The architecture scales horizontally: add a cartridge, expand the router, mount both, and the system preserves existing capabilities while gaining new ones. The boundary between knowledge and commonsense tasks is a matter of training curriculum, not architecture — multi-dataset training unlocks commonsense gains previously thought inaccessible.
