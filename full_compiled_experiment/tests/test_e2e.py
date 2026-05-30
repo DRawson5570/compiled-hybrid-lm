@@ -246,9 +246,12 @@ def test8_multilayer_fidelity(device="cuda"):
     for h in hooks: h.remove()
 
     stdlib = {}
+    cos, sin = model.model.rotary_emb(
+        torch.zeros(1, 256, 128), torch.arange(256).unsqueeze(0)
+    )
     for l in target:
         a = model.model.layers[l].self_attn
-        stdlib[f"a_L{l}"] = {"operator_type":"multihead_attention","W_q":a.q_proj.weight.float().cpu(),"W_k":a.k_proj.weight.float().cpu(),"W_v":a.v_proj.weight.float().cpu(),"W_o":a.o_proj.weight.float().cpu(),"b_q":a.q_proj.bias.float().cpu() if a.q_proj.bias is not None else None,"b_k":a.k_proj.bias.float().cpu() if a.k_proj.bias is not None else None,"b_v":a.v_proj.bias.float().cpu() if a.v_proj.bias is not None else None,"n_heads":12,"n_kv_heads":2,"head_dim":128}
+        stdlib[f"a_L{l}"] = {"operator_type":"multihead_attention","W_q":a.q_proj.weight.float().cpu(),"W_k":a.k_proj.weight.float().cpu(),"W_v":a.v_proj.weight.float().cpu(),"W_o":a.o_proj.weight.float().cpu(),"b_q":a.q_proj.bias.float().cpu() if a.q_proj.bias is not None else None,"b_k":a.k_proj.bias.float().cpu() if a.k_proj.bias is not None else None,"b_v":a.v_proj.bias.float().cpu() if a.v_proj.bias is not None else None,"cos":cos,"sin":sin,"n_heads":12,"n_kv_heads":2,"head_dim":128}
         mw = extract_full_mlp_weights_lr(model, l, rank=128)
         stdlib[f"m_L{l}"] = {"operator_type":"sparse_down_projection_lr","gate_weight":mw["gate_weight"],"gate_bias":mw["gate_bias"],"up_weight":mw["up_weight"],"down_weight":mw["down_weight"],"U_r":mw["U_r"],"V_r":mw["V_r"],"top_k":1024}
 

@@ -493,13 +493,13 @@ class TritonBackend:
     def _run_fused_transform_activate(self, op, ws, batch_size) -> torch.Tensor:
         x = ws[op["input"]].contiguous()
         d_in = x.shape[-1]
-        d_out = d_in
         act_code = _act_type_code(op["activation"])
 
         matrix_ref = op["matrix"]
         if matrix_ref.ref_type == "stdlib" and matrix_ref.name in self.stdlib_weights:
             w = self._get_transform_weight(matrix_ref.name, d_in)
             w = w.to(device=x.device, dtype=torch.float32).contiguous()
+            d_out = w.shape[0] if hasattr(w, 'shape') and w.dim() >= 1 else d_in
         else:
             w = torch.eye(d_in, device=x.device, dtype=torch.float32)
 

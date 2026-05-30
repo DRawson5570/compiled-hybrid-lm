@@ -1,0 +1,34 @@
+teacher:
+  model: "deepseek-chat"
+  base_url: "https://api.deepseek.com"
+  api_key_path: "~/api_keys/deepseek"
+  max_tokens: 4096
+  temperature_analysis: 0.0
+  temperature_synthesis: 0.7
+
+target:
+  model: "Qwen/Qwen3.5-4B"
+  device: "cuda:0"
+
+training:
+  canonical_steps: 500
+  rft_steps: 500
+  lr: 3e-4
+  weight_decay: 0.01
+  bottleneck: 128
+  candidates_per_problem: 8
+  inject_layers: [0, 2, 4, 7, 10, 14, 17, 21, 24, 26]
+  seq_cap: 128
+  max_new_tokens: 256
+  batch_size: 8
+
+synthesis:
+  examples_per_weakness: 20
+
+integration:
+  composition_mode: "mean"
+  batch_size: 8
+
+benchmark:
+  humaneval_split: "test"
+  max_new_tokens: 512

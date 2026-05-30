@@ -132,6 +132,8 @@ class ReferenceBackend:
             return self._apply_sparse_down_projection(x, weights)
         elif opt == "sparse_down_projection_lr":
             return self._apply_sparse_down_lr(x, weights)
+        elif opt == "distilled_mlp":
+            return self._apply_distilled_mlp(x, weights)
         elif opt == "direction_vector":
             vec = weights["vector"].to(device=x.device, dtype=x.dtype)
             return x + vec
@@ -378,6 +380,30 @@ class ReferenceBackend:
             result_flat = result_flat.reshape(B, T, -1)
 
         return result_flat.to(dtype=x.dtype)
+
+    def _apply_distilled_mlp(
+        self, x: torch.Tensor, weights: Dict[str, torch.Tensor]
+    ) -> torch.Tensor:
+        gate_up_w = weights["gate_up_weight"].to(device=x.device, dtype=torch.float32)
+        down_w = weights["down_weight"].to(device=x.device, dtype=torch.float32)
+
+        if x.dim() == 2:
+            x = x.unsqueeze(0)
+            squeezed = True
+        else:
+            squeezed = False
+
+        x_float = x.to(dtype=torch.float32)
+
+        h = x_float @ gate_up_w.T
+        gate, up = h.chunk(2, dim=-1)
+        activated = F.silu(gate) * up
+        result = activated @ down_w.T
+
+        if squeezed:
+            result = result.squeeze(0)
+
+        return result.to(dtype=x.dtype)
 
     def _apply_dynamic_transform(
         self, x: torch.Tensor, name: str, ws: Dict[str, torch.Tensor]

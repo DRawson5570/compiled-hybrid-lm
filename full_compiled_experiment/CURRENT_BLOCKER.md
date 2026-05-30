@@ -3,7 +3,8 @@
 **Status:** Investigated, root cause confirmed, Path A exhausted, Path B plan ready.  
 **Handoff:** Gemini 3.5 — pick up at Path B (distilled compact MLP).  
 **Date:** 2026-05-30  
-**Agent:** deepseek-v4-pro
+**Agent:** deepseek-v4-pro  
+**Update:** **BUG FOUND AND FIXED** — RoPE embeddings missing from multi-layer attention stdlib. After fix: layer 0 improved from 0.80 to 0.92, multi-layer avg from 0.463 to 0.501 (+8%). Blockers partially resolved — see Path B for remaining gap.
 
 ---
 
@@ -54,6 +55,29 @@ However, when chaining multiple layers together, **MLP fidelity collapses geomet
 **Why it failed:** The soft template mixing approach learns to weight 4 pre-computed sparse MLP outputs, but cannot produce *corrective deltas* — it only remixes existing fixed transforms. The MetaCompilers can't compensate for upstream sparse MLP error because they can only select which fixed MLP output to use, not modify the MLP computation itself. This is an architectural limitation, not a training issue.
 
 **Artifacts:** `artifacts/joint_training/pe3_run_20260530_154132.log`, config, checkpoint files.
+
+---
+
+## 3a. CRITICAL BUG FOUND AND FIXED (2026-05-30)
+
+**Bug:** The multi-layer stdlib builder (`build_stdlib_and_programs()`) was NOT including RoPE embeddings (`cos`/`sin`) in attention stdlib entries. This meant attention at layers 4 and 8 was operating without positional encoding, producing outputs at only 0.89-0.96 cosine fidelity instead of 1.0000.
+
+**Root cause:** `test_e2e.py` test 8 and `train_joint_multilayer.py` both build attention stdlib entries with Q/K/V/O weights only, omitting `"cos": cos_val, "sin": sin_val` that `_apply_full_attention` expects for RoPE rotation.
+
+**Fix:** Extract `cos, sin = model.model.rotary_emb(...)` once and include in every attention stdlib entry.
+
+**Impact after fix:**
+
+| Layer | Before (no RoPE) | After (with RoPE) | Improvement |
+|-------|------------------|-------------------|-------------|
+| Layer 0 no correction | 0.801 | **0.922** | +15% |
+| Layer 4 with correction | 0.291 | **0.291** | — |
+| Layer 8 with correction | 0.290 | **0.290** | — |
+| Average with correction | 0.463 | **0.501** | +8% |
+
+**Key insight:** Layer 0 went from 0.80 to 0.92 — the previous 0.80 was not measuring the true sparse MLP limit, it was measuring ATTENTION error + sparse MLP error combined. The true single-layer sparse MLP fidelity (K=1024, R=128 LR) is 0.92.
+
+**Remaining gap:** Layers 4 and 8 still collapse to 0.11 without correction, 0.29 with correction. This is now confirmed as genuine sparse MLP error accumulation (not a bug). The accumulated correction approach helps (0.11 → 0.29, ~2.6×) but can't fully recover.
 
 ---
 

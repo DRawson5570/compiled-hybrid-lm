@@ -305,15 +305,46 @@ def extract_gated_mlp_sparse(
     values_norm = values.norm(dim=1, keepdim=True) + 1e-8
     values = values / values_norm
 
-    return {
-        "gate_keys": gate_keys,
-        "gate_biases": gate_biases,
-        "values": values,
-        "scales": scales,
-        "method": f"gated_sparse_k{k}",
-        "n_neurons": n_neurons,
-        "n_keys": k,
-    }
+def collect_mlp_io_pairs(
+    model,
+    tokenizer,
+    layer: int,
+    prompts: list,
+    max_length: int = 96,
+    device: str = "cuda",
+) -> tuple:
+    """
+    Collect (input, output) pairs from a specific MLP layer
+    for distillation training. Returns (inputs, targets) tensors.
+    """
+    mlp = model.model.layers[layer].mlp
+    mlp_inputs = []
+    mlp_outputs = []
+
+    def pre_hook(module, args, kwargs):
+        if args:
+            mlp_inputs.append(args[0].detach().clone())
+        elif "hidden_states" in kwargs:
+            mlp_inputs.append(kwargs["hidden_states"].detach().clone())
+
+    def post_hook(module, args, output):
+        mlp_outputs.append((output[0] if isinstance(output, tuple) else output).detach().clone())
+
+    ph = mlp.register_forward_pre_hook(pre_hook, with_kwargs=True)
+    pth = mlp.register_forward_hook(post_hook)
+
+    for prompt in prompts:
+        inp = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=max_length).to(device)
+        with torch.no_grad():
+            model(**inp)
+
+    pth.remove()
+    ph.remove()
+
+    inputs = torch.cat([t.reshape(-1, t.shape[-1]) for t in mlp_inputs], dim=0).float()
+    targets = torch.cat([t.reshape(-1, t.shape[-1]) for t in mlp_outputs], dim=0).float()
+
+    return inputs, targets
 
 
 def extract_full_mlp_weights(

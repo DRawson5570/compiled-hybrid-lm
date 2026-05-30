@@ -6,3 +6,15 @@ __pycache__/
 dist/
 build/
 .DS_Store
+
+full_compiled_experiment/artifacts/**/*.pt
+full_compiled_experiment/artifacts/**/*.bin
+full_compiled_experiment/artifacts/**/*.pth
+full_compiled_experiment/artifacts/**/*.pkl
+
+code_harness/artifacts/
+code_harness/weaknesses/
+code_harness/challenges/
+code_harness/*.jsonl
+code_harness/eval_harness/results/
+code_harness/repo_attention/

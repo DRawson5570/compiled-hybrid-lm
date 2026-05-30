@@ -83,6 +83,11 @@ def _fallback_prompts(n):
 def build_stdlib_and_programs(model, target_layers):
     from ucn.decompile.mlp_decomposer import extract_full_mlp_weights_lr
 
+    cos, sin = model.model.rotary_emb(
+        torch.zeros(1, 256, 128, device=model.device),
+        torch.arange(256, device=model.device).unsqueeze(0)
+    )
+
     stdlib = {}
     for l in target_layers:
         a = model.model.layers[l].self_attn
@@ -95,6 +100,7 @@ def build_stdlib_and_programs(model, target_layers):
             "b_q": a.q_proj.bias.float().cpu() if a.q_proj.bias is not None else None,
             "b_k": a.k_proj.bias.float().cpu() if a.k_proj.bias is not None else None,
             "b_v": a.v_proj.bias.float().cpu() if a.v_proj.bias is not None else None,
+            "cos": cos.cpu(), "sin": sin.cpu(),
             "n_heads": 12, "n_kv_heads": 2, "head_dim": 128,
         }
         mw = extract_full_mlp_weights_lr(model, l, rank=128)
