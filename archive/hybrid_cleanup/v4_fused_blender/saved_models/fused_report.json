@@ -1,0 +1,9 @@
+{
+    "baseline_compiled_val_ppl": 13.361512568624397,
+    "baseline_compiled_eval_ppl": 11.62304836831619,
+    "best_fused_eval_nll": 2.2486069771665838,
+    "best_fused_eval_ppl": 9.474528404963575,
+    "params": 11590656,
+    "epochs": 10,
+    "lr": 0.0002
+}

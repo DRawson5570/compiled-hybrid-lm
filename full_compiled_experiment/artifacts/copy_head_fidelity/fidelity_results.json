@@ -1,0 +1,27 @@
+{
+  "prompts": [
+    "The cat sat on the mat and looked around.",
+    "Machine learning enables computers to learn from data.",
+    "The capital of France is Paris, a city known for its art.",
+    "Python is a high-level programming language for data science.",
+    "The quick brown fox jumps over the lazy dog near the river."
+  ],
+  "cosine_similarities": [
+    0.18474841117858887,
+    0.1850927174091339,
+    0.16648723185062408,
+    0.18382690846920013,
+    0.17170163989067078
+  ],
+  "mses": [
+    0.09232024103403091,
+    0.10802766680717468,
+    0.09681318700313568,
+    0.11086241155862808,
+    0.11258746683597565
+  ],
+  "avg_cosine": 0.17837138175964357,
+  "avg_mse": 0.104122194647789,
+  "std_cosine": 0.0086793452501297,
+  "std_mse": 0.009014596231281757
+}

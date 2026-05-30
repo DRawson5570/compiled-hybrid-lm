@@ -1,0 +1,27 @@
+{
+  "stdlib_version": "3.0.0",
+  "primitives": {
+    "PRM_COPY_HEAD_L0_H8": {
+      "primitive_id": "PRM_COPY_HEAD_L0_H8",
+      "symbolic_name": "copy_head_L0_H8",
+      "type": "operator_circuit",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "low_rank_projection",
+        "rank": 128,
+        "u_uri": "weights/copy_head_v_u.pt",
+        "v_uri": "weights/copy_head_o_v.pt",
+        "vector_uri": null
+      },
+      "behavioral_metadata": {
+        "description": "Copy head V/O projection: attends to previous token, copies via V/O",
+        "trigger_conditions": [
+          "sequence_tokens",
+          "previous_position"
+        ]
+      }
+    }
+  }
+}

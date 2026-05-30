@@ -1,0 +1,45 @@
+{
+  "phases_complete": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "config": {
+    "d_model": 128,
+    "n_templates": 4,
+    "n_primitives": 4,
+    "d_latent": 32,
+    "meta_compiler_params": 17224
+  },
+  "distillation": {
+    "train_samples": 150,
+    "eval_samples": 50,
+    "steps": 500,
+    "final_template_loss": 0.3428235650062561,
+    "final_param_loss": 0.07110129296779633
+  },
+  "evaluation": {
+    "template_accuracy": 0.32,
+    "avg_param_mse": 0.26954920781456165
+  },
+  "fidelity": {
+    "avg_cosine_similarity": 0.10851452890783549,
+    "avg_mse": 0.6630890816450119,
+    "n_test_samples": 10
+  },
+  "copy_head_extraction": {
+    "layer": 0,
+    "head": 8,
+    "prev_token_attention": 0.7006,
+    "sae_features": 256,
+    "primitive_count": 100
+  },
+  "copy_head_fidelity": {
+    "method": "V-O projection",
+    "avg_cosine": 0.1783,
+    "note": "Single head only; all-12-heads achieves ~0.25 cosine"
+  }
+}

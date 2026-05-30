@@ -1,0 +1,38 @@
+{
+  "slice": "eval",
+  "T": 99998,
+  "C": 12,
+  "trained_blender_ppl": 20.233725107432377,
+  "uniform_mix_ppl": 59.14721393413669,
+  "best_single_channel": "kn",
+  "best_single_ppl": 88.2502008723597,
+  "oracle_per_token_ppl": 11.210962023085694,
+  "per_channel_ppl": {
+    "kn": 88.2502008723597,
+    "mix": 265.77325193353244,
+    "tri_f": 4485.082260074865,
+    "tri_s": 5347.645347758897,
+    "bi_f": 2402.56964365478,
+    "bi_s": 2310.8107101746364,
+    "uc_f": 1950.2626924017818,
+    "uc_s": 1960.9641406348328,
+    "att_uf": 1387.3183607402882,
+    "att_us": 510.8847700528678,
+    "att_rf": 403.2089746750737,
+    "att_rs": 357.951434649117
+  },
+  "blender_args": {
+    "data_dir": "hybrid/v1_blender/data_real",
+    "out": "hybrid/v1_blender/data_real/blender.pt",
+    "epochs": 200,
+    "batch": 4096,
+    "lr": 0.001,
+    "weight_decay": 0.0001,
+    "hidden": 128,
+    "dropout": 0.0,
+    "val_frac": 0.2,
+    "no_embedding": false,
+    "seed": 0,
+    "device": "cuda"
+  }
+}

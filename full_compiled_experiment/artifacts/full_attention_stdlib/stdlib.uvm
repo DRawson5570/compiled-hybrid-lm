@@ -1,0 +1,26 @@
+{
+  "stdlib_version": "3.0.0",
+  "primitives": {
+    "PRM_FULL_ATTN_L0": {
+      "primitive_id": "PRM_FULL_ATTN_L0",
+      "symbolic_name": "full_attention_layer_0",
+      "type": "operator_circuit",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "multihead_attention",
+        "rank": null,
+        "u_uri": "weights/l0_attn_q_proj_weight.pt",
+        "v_uri": null,
+        "vector_uri": null
+      },
+      "behavioral_metadata": {
+        "description": "Full multi-head attention for Qwen2.5-1.5B layer 0",
+        "trigger_conditions": [
+          "all_tokens"
+        ]
+      }
+    }
+  }
+}

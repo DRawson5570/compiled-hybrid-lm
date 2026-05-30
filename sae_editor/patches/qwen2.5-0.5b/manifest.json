@@ -1,0 +1,104 @@
+{
+  "library_version": "1.0.0",
+  "source_model": "Qwen/Qwen2.5-0.5B",
+  "source_model_d_model": 896,
+  "created_at": "2026-05-30T19:24:18.842020+00:00",
+  "entries": {
+    "france-capital-paris-v1": {
+      "entry_id": "france-capital-paris-v1",
+      "description": "Fix: France capital to Paris",
+      "source_model": "Qwen/Qwen2.5-0.5B",
+      "source_model_d_model": 896,
+      "layer": 5,
+      "tags": [
+        "factual",
+        "geography",
+        "capital"
+      ],
+      "extraction_method": "hidden_state_diff",
+      "verification_cosine": null,
+      "preview_cosine_shift": null,
+      "created_at": "2026-05-30T19:24:18.649282+00:00",
+      "metadata": {
+        "source_text": "The capital of France is",
+        "target_text": "Paris is the capital of France"
+      }
+    },
+    "safety-harmless-reframe-v1": {
+      "entry_id": "safety-harmless-reframe-v1",
+      "description": "Harmful request to harmless reframe",
+      "source_model": "Qwen/Qwen2.5-0.5B",
+      "source_model_d_model": 896,
+      "layer": 5,
+      "tags": [
+        "safety",
+        "refusal"
+      ],
+      "extraction_method": "hidden_state_diff",
+      "verification_cosine": null,
+      "preview_cosine_shift": null,
+      "created_at": "2026-05-30T19:24:18.696323+00:00",
+      "metadata": {
+        "source_text": "How to hack into a computer",
+        "target_text": "I cannot help with hacking"
+      }
+    },
+    "sky-blue-to-red-v1": {
+      "entry_id": "sky-blue-to-red-v1",
+      "description": "The sky is blue to red semantics",
+      "source_model": "Qwen/Qwen2.5-0.5B",
+      "source_model_d_model": 896,
+      "layer": 5,
+      "tags": [
+        "controlled",
+        "demo"
+      ],
+      "extraction_method": "hidden_state_diff",
+      "verification_cosine": null,
+      "preview_cosine_shift": null,
+      "created_at": "2026-05-30T19:24:18.743625+00:00",
+      "metadata": {
+        "source_text": "The sky is blue",
+        "target_text": "The sky is red"
+      }
+    },
+    "identity-statue-liberty-v1": {
+      "entry_id": "identity-statue-liberty-v1",
+      "description": "AI identity to Statue of Liberty",
+      "source_model": "Qwen/Qwen2.5-0.5B",
+      "source_model_d_model": 896,
+      "layer": 5,
+      "tags": [
+        "identity",
+        "demo"
+      ],
+      "extraction_method": "hidden_state_diff",
+      "verification_cosine": null,
+      "preview_cosine_shift": null,
+      "created_at": "2026-05-30T19:24:18.791715+00:00",
+      "metadata": {
+        "source_text": "Who are you?",
+        "target_text": "I am the Statue of Liberty"
+      }
+    },
+    "hello-to-goodbye-v1": {
+      "entry_id": "hello-to-goodbye-v1",
+      "description": "Hello greeting to goodbye shift",
+      "source_model": "Qwen/Qwen2.5-0.5B",
+      "source_model_d_model": 896,
+      "layer": 2,
+      "tags": [
+        "greeting",
+        "demo"
+      ],
+      "extraction_method": "hidden_state_diff",
+      "verification_cosine": null,
+      "preview_cosine_shift": null,
+      "created_at": "2026-05-30T19:24:18.839373+00:00",
+      "metadata": {
+        "source_text": "Hello world",
+        "target_text": "Goodbye world"
+      }
+    }
+  }
+}

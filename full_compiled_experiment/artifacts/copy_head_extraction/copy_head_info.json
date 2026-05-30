@@ -1,0 +1,21 @@
+{
+  "layer": 0,
+  "head": 8,
+  "d_model": 1536,
+  "n_layers": 28,
+  "n_heads": 12,
+  "copy_strength": 0.7005586248144882,
+  "prev_attention": 0.7005586248144882,
+  "fidelity": {
+    "prev_attention": 0.7212091898746628,
+    "diag_attention": 0.14622463253762225
+  },
+  "sae_config": {
+    "d_model": 1536,
+    "n_features": 256,
+    "l1_lambda": 0.001
+  },
+  "n_extracted_features": 100,
+  "stdlib_path": "/home/drawson/deepseek_experiments/hybrid/full_compiled_experiment/artifacts/copy_head_extraction/stdlib.uvm",
+  "weights_dir": "/home/drawson/deepseek_experiments/hybrid/full_compiled_experiment/artifacts/copy_head_extraction/weights"
+}

@@ -1,0 +1,13 @@
+{
+  "method": "full_attention",
+  "model": "Qwen2.5-1.5B",
+  "layer": 0,
+  "n_heads": 12,
+  "n_kv_heads": 2,
+  "head_dim": 128,
+  "avg_cosine": 1.0000000953674317,
+  "min_cosine": 0.9999996423721313,
+  "max_cosine": 1.0000007152557373,
+  "avg_mse": 0.0,
+  "n_test_prompts": 10
+}

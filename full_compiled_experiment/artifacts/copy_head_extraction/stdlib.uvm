@@ -1,0 +1,1905 @@
+{
+  "stdlib_version": "3.0.0",
+  "primitives": {
+    "PRM_COPY_L0_F0019": {
+      "primitive_id": "PRM_COPY_L0_F0019",
+      "symbolic_name": "copy_head_L0_feature_19",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0019_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 19 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0178": {
+      "primitive_id": "PRM_COPY_L0_F0178",
+      "symbolic_name": "copy_head_L0_feature_178",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0178_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 178 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0190": {
+      "primitive_id": "PRM_COPY_L0_F0190",
+      "symbolic_name": "copy_head_L0_feature_190",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0190_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 190 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0218": {
+      "primitive_id": "PRM_COPY_L0_F0218",
+      "symbolic_name": "copy_head_L0_feature_218",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0218_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 218 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0249": {
+      "primitive_id": "PRM_COPY_L0_F0249",
+      "symbolic_name": "copy_head_L0_feature_249",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0249_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 249 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0089": {
+      "primitive_id": "PRM_COPY_L0_F0089",
+      "symbolic_name": "copy_head_L0_feature_89",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0089_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 89 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0204": {
+      "primitive_id": "PRM_COPY_L0_F0204",
+      "symbolic_name": "copy_head_L0_feature_204",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0204_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 204 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0130": {
+      "primitive_id": "PRM_COPY_L0_F0130",
+      "symbolic_name": "copy_head_L0_feature_130",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0130_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 130 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0080": {
+      "primitive_id": "PRM_COPY_L0_F0080",
+      "symbolic_name": "copy_head_L0_feature_80",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0080_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 80 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0048": {
+      "primitive_id": "PRM_COPY_L0_F0048",
+      "symbolic_name": "copy_head_L0_feature_48",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0048_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 48 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0065": {
+      "primitive_id": "PRM_COPY_L0_F0065",
+      "symbolic_name": "copy_head_L0_feature_65",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0065_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 65 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0174": {
+      "primitive_id": "PRM_COPY_L0_F0174",
+      "symbolic_name": "copy_head_L0_feature_174",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0174_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 174 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0102": {
+      "primitive_id": "PRM_COPY_L0_F0102",
+      "symbolic_name": "copy_head_L0_feature_102",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0102_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 102 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0017": {
+      "primitive_id": "PRM_COPY_L0_F0017",
+      "symbolic_name": "copy_head_L0_feature_17",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0017_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 17 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0067": {
+      "primitive_id": "PRM_COPY_L0_F0067",
+      "symbolic_name": "copy_head_L0_feature_67",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0067_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 67 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0103": {
+      "primitive_id": "PRM_COPY_L0_F0103",
+      "symbolic_name": "copy_head_L0_feature_103",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0103_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 103 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0106": {
+      "primitive_id": "PRM_COPY_L0_F0106",
+      "symbolic_name": "copy_head_L0_feature_106",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0106_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 106 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0231": {
+      "primitive_id": "PRM_COPY_L0_F0231",
+      "symbolic_name": "copy_head_L0_feature_231",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0231_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 231 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0109": {
+      "primitive_id": "PRM_COPY_L0_F0109",
+      "symbolic_name": "copy_head_L0_feature_109",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0109_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 109 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0253": {
+      "primitive_id": "PRM_COPY_L0_F0253",
+      "symbolic_name": "copy_head_L0_feature_253",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0253_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 253 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0042": {
+      "primitive_id": "PRM_COPY_L0_F0042",
+      "symbolic_name": "copy_head_L0_feature_42",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0042_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 42 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0217": {
+      "primitive_id": "PRM_COPY_L0_F0217",
+      "symbolic_name": "copy_head_L0_feature_217",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0217_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 217 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0211": {
+      "primitive_id": "PRM_COPY_L0_F0211",
+      "symbolic_name": "copy_head_L0_feature_211",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0211_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 211 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0013": {
+      "primitive_id": "PRM_COPY_L0_F0013",
+      "symbolic_name": "copy_head_L0_feature_13",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0013_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 13 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0255": {
+      "primitive_id": "PRM_COPY_L0_F0255",
+      "symbolic_name": "copy_head_L0_feature_255",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0255_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 255 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0139": {
+      "primitive_id": "PRM_COPY_L0_F0139",
+      "symbolic_name": "copy_head_L0_feature_139",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0139_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 139 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0247": {
+      "primitive_id": "PRM_COPY_L0_F0247",
+      "symbolic_name": "copy_head_L0_feature_247",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0247_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 247 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0142": {
+      "primitive_id": "PRM_COPY_L0_F0142",
+      "symbolic_name": "copy_head_L0_feature_142",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0142_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 142 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0091": {
+      "primitive_id": "PRM_COPY_L0_F0091",
+      "symbolic_name": "copy_head_L0_feature_91",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0091_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 91 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0251": {
+      "primitive_id": "PRM_COPY_L0_F0251",
+      "symbolic_name": "copy_head_L0_feature_251",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0251_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 251 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0207": {
+      "primitive_id": "PRM_COPY_L0_F0207",
+      "symbolic_name": "copy_head_L0_feature_207",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0207_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 207 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0118": {
+      "primitive_id": "PRM_COPY_L0_F0118",
+      "symbolic_name": "copy_head_L0_feature_118",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0118_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 118 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0069": {
+      "primitive_id": "PRM_COPY_L0_F0069",
+      "symbolic_name": "copy_head_L0_feature_69",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0069_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 69 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0240": {
+      "primitive_id": "PRM_COPY_L0_F0240",
+      "symbolic_name": "copy_head_L0_feature_240",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0240_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 240 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0104": {
+      "primitive_id": "PRM_COPY_L0_F0104",
+      "symbolic_name": "copy_head_L0_feature_104",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0104_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 104 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0113": {
+      "primitive_id": "PRM_COPY_L0_F0113",
+      "symbolic_name": "copy_head_L0_feature_113",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0113_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 113 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0196": {
+      "primitive_id": "PRM_COPY_L0_F0196",
+      "symbolic_name": "copy_head_L0_feature_196",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0196_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 196 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0059": {
+      "primitive_id": "PRM_COPY_L0_F0059",
+      "symbolic_name": "copy_head_L0_feature_59",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0059_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 59 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0116": {
+      "primitive_id": "PRM_COPY_L0_F0116",
+      "symbolic_name": "copy_head_L0_feature_116",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0116_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 116 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0151": {
+      "primitive_id": "PRM_COPY_L0_F0151",
+      "symbolic_name": "copy_head_L0_feature_151",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0151_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 151 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0098": {
+      "primitive_id": "PRM_COPY_L0_F0098",
+      "symbolic_name": "copy_head_L0_feature_98",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0098_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 98 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0221": {
+      "primitive_id": "PRM_COPY_L0_F0221",
+      "symbolic_name": "copy_head_L0_feature_221",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0221_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 221 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0167": {
+      "primitive_id": "PRM_COPY_L0_F0167",
+      "symbolic_name": "copy_head_L0_feature_167",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0167_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 167 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0044": {
+      "primitive_id": "PRM_COPY_L0_F0044",
+      "symbolic_name": "copy_head_L0_feature_44",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0044_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 44 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0173": {
+      "primitive_id": "PRM_COPY_L0_F0173",
+      "symbolic_name": "copy_head_L0_feature_173",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0173_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 173 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0063": {
+      "primitive_id": "PRM_COPY_L0_F0063",
+      "symbolic_name": "copy_head_L0_feature_63",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0063_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 63 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0024": {
+      "primitive_id": "PRM_COPY_L0_F0024",
+      "symbolic_name": "copy_head_L0_feature_24",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0024_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 24 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0129": {
+      "primitive_id": "PRM_COPY_L0_F0129",
+      "symbolic_name": "copy_head_L0_feature_129",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0129_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 129 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0028": {
+      "primitive_id": "PRM_COPY_L0_F0028",
+      "symbolic_name": "copy_head_L0_feature_28",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0028_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 28 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0181": {
+      "primitive_id": "PRM_COPY_L0_F0181",
+      "symbolic_name": "copy_head_L0_feature_181",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0181_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 181 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0194": {
+      "primitive_id": "PRM_COPY_L0_F0194",
+      "symbolic_name": "copy_head_L0_feature_194",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0194_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 194 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0146": {
+      "primitive_id": "PRM_COPY_L0_F0146",
+      "symbolic_name": "copy_head_L0_feature_146",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0146_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 146 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0072": {
+      "primitive_id": "PRM_COPY_L0_F0072",
+      "symbolic_name": "copy_head_L0_feature_72",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0072_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 72 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0082": {
+      "primitive_id": "PRM_COPY_L0_F0082",
+      "symbolic_name": "copy_head_L0_feature_82",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0082_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 82 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0088": {
+      "primitive_id": "PRM_COPY_L0_F0088",
+      "symbolic_name": "copy_head_L0_feature_88",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0088_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 88 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0224": {
+      "primitive_id": "PRM_COPY_L0_F0224",
+      "symbolic_name": "copy_head_L0_feature_224",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0224_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 224 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0117": {
+      "primitive_id": "PRM_COPY_L0_F0117",
+      "symbolic_name": "copy_head_L0_feature_117",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0117_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 117 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0073": {
+      "primitive_id": "PRM_COPY_L0_F0073",
+      "symbolic_name": "copy_head_L0_feature_73",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0073_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 73 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0220": {
+      "primitive_id": "PRM_COPY_L0_F0220",
+      "symbolic_name": "copy_head_L0_feature_220",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0220_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 220 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0100": {
+      "primitive_id": "PRM_COPY_L0_F0100",
+      "symbolic_name": "copy_head_L0_feature_100",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0100_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 100 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0037": {
+      "primitive_id": "PRM_COPY_L0_F0037",
+      "symbolic_name": "copy_head_L0_feature_37",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0037_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 37 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0183": {
+      "primitive_id": "PRM_COPY_L0_F0183",
+      "symbolic_name": "copy_head_L0_feature_183",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0183_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 183 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0233": {
+      "primitive_id": "PRM_COPY_L0_F0233",
+      "symbolic_name": "copy_head_L0_feature_233",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0233_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 233 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0201": {
+      "primitive_id": "PRM_COPY_L0_F0201",
+      "symbolic_name": "copy_head_L0_feature_201",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0201_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 201 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0101": {
+      "primitive_id": "PRM_COPY_L0_F0101",
+      "symbolic_name": "copy_head_L0_feature_101",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0101_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 101 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0035": {
+      "primitive_id": "PRM_COPY_L0_F0035",
+      "symbolic_name": "copy_head_L0_feature_35",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0035_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 35 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0162": {
+      "primitive_id": "PRM_COPY_L0_F0162",
+      "symbolic_name": "copy_head_L0_feature_162",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0162_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 162 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0061": {
+      "primitive_id": "PRM_COPY_L0_F0061",
+      "symbolic_name": "copy_head_L0_feature_61",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0061_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 61 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0057": {
+      "primitive_id": "PRM_COPY_L0_F0057",
+      "symbolic_name": "copy_head_L0_feature_57",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0057_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 57 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0138": {
+      "primitive_id": "PRM_COPY_L0_F0138",
+      "symbolic_name": "copy_head_L0_feature_138",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0138_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 138 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0254": {
+      "primitive_id": "PRM_COPY_L0_F0254",
+      "symbolic_name": "copy_head_L0_feature_254",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0254_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 254 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0004": {
+      "primitive_id": "PRM_COPY_L0_F0004",
+      "symbolic_name": "copy_head_L0_feature_4",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0004_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 4 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0234": {
+      "primitive_id": "PRM_COPY_L0_F0234",
+      "symbolic_name": "copy_head_L0_feature_234",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0234_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 234 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0015": {
+      "primitive_id": "PRM_COPY_L0_F0015",
+      "symbolic_name": "copy_head_L0_feature_15",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0015_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 15 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0163": {
+      "primitive_id": "PRM_COPY_L0_F0163",
+      "symbolic_name": "copy_head_L0_feature_163",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0163_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 163 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0141": {
+      "primitive_id": "PRM_COPY_L0_F0141",
+      "symbolic_name": "copy_head_L0_feature_141",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0141_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 141 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0229": {
+      "primitive_id": "PRM_COPY_L0_F0229",
+      "symbolic_name": "copy_head_L0_feature_229",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0229_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 229 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0216": {
+      "primitive_id": "PRM_COPY_L0_F0216",
+      "symbolic_name": "copy_head_L0_feature_216",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0216_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 216 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0075": {
+      "primitive_id": "PRM_COPY_L0_F0075",
+      "symbolic_name": "copy_head_L0_feature_75",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0075_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 75 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0094": {
+      "primitive_id": "PRM_COPY_L0_F0094",
+      "symbolic_name": "copy_head_L0_feature_94",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0094_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 94 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0134": {
+      "primitive_id": "PRM_COPY_L0_F0134",
+      "symbolic_name": "copy_head_L0_feature_134",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0134_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 134 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0235": {
+      "primitive_id": "PRM_COPY_L0_F0235",
+      "symbolic_name": "copy_head_L0_feature_235",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0235_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 235 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0237": {
+      "primitive_id": "PRM_COPY_L0_F0237",
+      "symbolic_name": "copy_head_L0_feature_237",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0237_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 237 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0007": {
+      "primitive_id": "PRM_COPY_L0_F0007",
+      "symbolic_name": "copy_head_L0_feature_7",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0007_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 7 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0112": {
+      "primitive_id": "PRM_COPY_L0_F0112",
+      "symbolic_name": "copy_head_L0_feature_112",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0112_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 112 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0125": {
+      "primitive_id": "PRM_COPY_L0_F0125",
+      "symbolic_name": "copy_head_L0_feature_125",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0125_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 125 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0157": {
+      "primitive_id": "PRM_COPY_L0_F0157",
+      "symbolic_name": "copy_head_L0_feature_157",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0157_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 157 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0244": {
+      "primitive_id": "PRM_COPY_L0_F0244",
+      "symbolic_name": "copy_head_L0_feature_244",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0244_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 244 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0127": {
+      "primitive_id": "PRM_COPY_L0_F0127",
+      "symbolic_name": "copy_head_L0_feature_127",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0127_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 127 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0005": {
+      "primitive_id": "PRM_COPY_L0_F0005",
+      "symbolic_name": "copy_head_L0_feature_5",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0005_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 5 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0133": {
+      "primitive_id": "PRM_COPY_L0_F0133",
+      "symbolic_name": "copy_head_L0_feature_133",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0133_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 133 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0032": {
+      "primitive_id": "PRM_COPY_L0_F0032",
+      "symbolic_name": "copy_head_L0_feature_32",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0032_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 32 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0083": {
+      "primitive_id": "PRM_COPY_L0_F0083",
+      "symbolic_name": "copy_head_L0_feature_83",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0083_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 83 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0136": {
+      "primitive_id": "PRM_COPY_L0_F0136",
+      "symbolic_name": "copy_head_L0_feature_136",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0136_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 136 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0230": {
+      "primitive_id": "PRM_COPY_L0_F0230",
+      "symbolic_name": "copy_head_L0_feature_230",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0230_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 230 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0045": {
+      "primitive_id": "PRM_COPY_L0_F0045",
+      "symbolic_name": "copy_head_L0_feature_45",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0045_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 45 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0225": {
+      "primitive_id": "PRM_COPY_L0_F0225",
+      "symbolic_name": "copy_head_L0_feature_225",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0225_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 225 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0131": {
+      "primitive_id": "PRM_COPY_L0_F0131",
+      "symbolic_name": "copy_head_L0_feature_131",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0131_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 131 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0144": {
+      "primitive_id": "PRM_COPY_L0_F0144",
+      "symbolic_name": "copy_head_L0_feature_144",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0144_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 144 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    },
+    "PRM_COPY_L0_F0226": {
+      "primitive_id": "PRM_COPY_L0_F0226",
+      "symbolic_name": "copy_head_L0_feature_226",
+      "type": "latent_feature",
+      "source_layers": [
+        0
+      ],
+      "mathematical_definition": {
+        "operator_type": "direction_vector",
+        "rank": null,
+        "u_uri": null,
+        "v_uri": null,
+        "vector_uri": "weights/PRM_COPY_L0_F0226_vec.pt"
+      },
+      "behavioral_metadata": {
+        "description": "Latent feature 226 from copy head at layer 0, head 8",
+        "trigger_conditions": []
+      }
+    }
+  }
+}

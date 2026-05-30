@@ -1,0 +1,8 @@
+{
+  "method": "ucn_compiled_full_attention",
+  "mean_cosine": 1.0000001072883606,
+  "min_cosine": 0.9999999403953552,
+  "max_cosine": 1.0000004768371582,
+  "n_prompts": 5,
+  "gap_bridged": true
+}
